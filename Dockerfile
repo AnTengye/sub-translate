@@ -1,0 +1,29 @@
+FROM node:22-alpine AS build
+WORKDIR /app
+
+ARG VITE_APP_TITLE="SRT Translate"
+ARG VITE_DEFAULT_PROVIDER=claude
+ARG VITE_CLAUDE_MODEL=claude-3-5-sonnet-latest
+ARG VITE_OPENAI_ENDPOINT=https://api.openai.com/v1
+ARG VITE_OPENAI_MODEL=gpt-4o-mini
+ARG VITE_QWEN_MODEL=qwen-mt-turbo
+
+ENV VITE_APP_TITLE=$VITE_APP_TITLE
+ENV VITE_DEFAULT_PROVIDER=$VITE_DEFAULT_PROVIDER
+ENV VITE_CLAUDE_MODEL=$VITE_CLAUDE_MODEL
+ENV VITE_OPENAI_ENDPOINT=$VITE_OPENAI_ENDPOINT
+ENV VITE_OPENAI_MODEL=$VITE_OPENAI_MODEL
+ENV VITE_QWEN_MODEL=$VITE_QWEN_MODEL
+
+COPY package*.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=build /app/dist /usr/share/nginx/html
+
+EXPOSE 80
+
+CMD ["nginx", "-g", "daemon off;"]

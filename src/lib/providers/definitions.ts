@@ -1,3 +1,4 @@
+import { appEnv } from '../config/env';
 import type { ProviderDefinition } from './types';
 
 export const providerDefinitions: ProviderDefinition[] = [
@@ -12,7 +13,7 @@ export const providerDefinitions: ProviderDefinition[] = [
       { key: 'model', label: '模型名称', type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
     ],
     defaults: {
-      model: 'claude-3-5-sonnet-latest',
+      model: appEnv.claudeModel,
     } as Record<string, string>,
   },
   {
@@ -32,8 +33,8 @@ export const providerDefinitions: ProviderDefinition[] = [
       { key: 'model', label: '模型名称', type: 'text', placeholder: 'gpt-4o-mini' },
     ],
     defaults: {
-      endpoint: 'https://api.openai.com/v1',
-      model: 'gpt-4o-mini',
+      endpoint: appEnv.openAiEndpoint,
+      model: appEnv.openAiModel,
     } as Record<string, string>,
   },
   {
@@ -52,7 +53,7 @@ export const providerDefinitions: ProviderDefinition[] = [
       },
     ],
     defaults: {
-      qwenModel: 'qwen-mt-turbo',
+      qwenModel: appEnv.qwenModel,
     } as Record<string, string>,
     corsNote: '注意：需在浏览器端支持 CORS，建议配合代理服务',
   },

@@ -1,3 +1,4 @@
+import { appEnv } from '../../../lib/config/env';
 import type { SubtitleEntry } from '../../../lib/subtitle/types';
 import { getProviderDefinition } from '../../../lib/providers/registry';
 import type {
@@ -42,8 +43,8 @@ export function createInitialState(): SubtitleTranslatorState {
     fileName: '',
     entries: [],
     display: [],
-    provider: 'claude',
-    providerConfig: getDefaultProviderConfig('claude'),
+    provider: appEnv.defaultProvider,
+    providerConfig: getDefaultProviderConfig(appEnv.defaultProvider),
     translationConfig: {
       batchSize: 20,
       contextLines: 3,
