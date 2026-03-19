@@ -1,0 +1,21 @@
+:root {
+  color: #dde1f0;
+  background: #070810;
+  font-family: 'Segoe UI', sans-serif;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+body {
+  margin: 0;
+}
