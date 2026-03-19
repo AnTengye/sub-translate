@@ -6,9 +6,14 @@ export const providerDefinitions: ProviderDefinition[] = [
     label: 'Claude (Anthropic)',
     icon: '◆',
     color: '#d4a96a',
-    desc: '内置免费，无需 API Key，高质量翻译',
-    fields: [],
-    defaults: {},
+    desc: 'Anthropic Claude 模型，需要 API Key',
+    fields: [
+      { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'sk-ant-...' },
+      { key: 'model', label: '模型名称', type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
+    ],
+    defaults: {
+      model: 'claude-3-5-sonnet-latest',
+    },
   },
   {
     id: 'openai',
