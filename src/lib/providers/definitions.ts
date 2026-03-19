@@ -13,7 +13,7 @@ export const providerDefinitions: ProviderDefinition[] = [
     ],
     defaults: {
       model: 'claude-3-5-sonnet-latest',
-    },
+    } as Record<string, string>,
   },
   {
     id: 'openai',
@@ -34,7 +34,7 @@ export const providerDefinitions: ProviderDefinition[] = [
     defaults: {
       endpoint: 'https://api.openai.com/v1',
       model: 'gpt-4o-mini',
-    },
+    } as Record<string, string>,
   },
   {
     id: 'qwen',
@@ -53,7 +53,7 @@ export const providerDefinitions: ProviderDefinition[] = [
     ],
     defaults: {
       qwenModel: 'qwen-mt-turbo',
-    },
+    } as Record<string, string>,
     corsNote: '注意：需在浏览器端支持 CORS，建议配合代理服务',
   },
   {
@@ -72,7 +72,7 @@ export const providerDefinitions: ProviderDefinition[] = [
         placeholder: 'https://corsproxy.io/?',
       },
     ],
-    defaults: {},
+    defaults: {} as Record<string, string>,
     corsNote: '浏览器直连可能遇到 CORS 限制，建议填写代理地址',
   },
 ];

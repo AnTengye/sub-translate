@@ -10,7 +10,7 @@ import type {
 
 type ProviderId = SubtitleTranslatorState['provider'];
 
-type SubtitleTranslatorAction =
+export type SubtitleTranslatorAction =
   | { type: 'reset' }
   | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
@@ -22,6 +22,8 @@ type SubtitleTranslatorAction =
   | { type: 'translationDone'; display: SubtitleEntry[] }
   | { type: 'translationFailed'; error: string }
   | { type: 'setLogs'; logs: TranslationLogEntry[] }
+  | { type: 'appendLog'; log: TranslationLogEntry }
+  | { type: 'setDisplay'; display: SubtitleEntry[] }
   | { type: 'setFilter'; filter: SubtitleFilter }
   | { type: 'setStep'; step: WorkflowStep }
   | { type: 'beginRetryAll' }
@@ -141,6 +143,16 @@ export function subtitleTranslatorReducer(
       return {
         ...state,
         logs: action.logs,
+      };
+    case 'appendLog':
+      return {
+        ...state,
+        logs: [...state.logs, action.log],
+      };
+    case 'setDisplay':
+      return {
+        ...state,
+        display: action.display,
       };
     case 'setFilter':
       return {

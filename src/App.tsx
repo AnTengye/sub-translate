@@ -1,5 +1,7 @@
+import SubtitleTranslatorPage from './features/subtitle-translator/SubtitleTranslatorPage';
+
 function App() {
-  return null;
+  return <SubtitleTranslatorPage />;
 }
 
 export default App;

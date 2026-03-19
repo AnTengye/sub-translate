@@ -1,7 +1,10 @@
 :root {
-  color: #dde1f0;
-  background: #070810;
+  color: #e6edf8;
+  background:
+    radial-gradient(circle at top, rgba(91, 133, 255, 0.2), transparent 35%),
+    linear-gradient(180deg, #08101d 0%, #101a2d 100%);
   font-family: 'Segoe UI', sans-serif;
+  color-scheme: dark;
 }
 
 *,
@@ -18,4 +21,283 @@ body,
 
 body {
   margin: 0;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+.app-shell {
+  display: grid;
+  grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+  gap: 24px;
+  min-height: 100vh;
+  padding: 24px;
+}
+
+.upload-screen {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0 0 12px;
+  color: #8db4ff;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+}
+
+.upload-screen h1,
+.content-header h2 {
+  margin: 0;
+}
+
+.lead,
+.muted-text {
+  color: #9aabc7;
+}
+
+.upload-card,
+.panel-card,
+.content-panel,
+.subtitle-card {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 20px;
+  background: rgba(8, 15, 27, 0.8);
+  backdrop-filter: blur(16px);
+  box-shadow: 0 12px 48px rgba(0, 0, 0, 0.24);
+}
+
+.upload-card {
+  display: flex;
+  width: min(100%, 480px);
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 24px;
+  padding: 32px;
+}
+
+.upload-card-title {
+  font-size: 24px;
+  font-weight: 700;
+}
+
+.upload-card-hint {
+  color: #9aabc7;
+}
+
+.sr-only-input {
+  width: 0.1px;
+  height: 0.1px;
+  opacity: 0;
+}
+
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.panel-card {
+  padding: 18px;
+}
+
+.section-title {
+  margin-bottom: 14px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+
+.file-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.provider-grid,
+.field-stack,
+.button-stack,
+.subtitle-list,
+.filter-row {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.provider-button,
+.primary-button,
+.secondary-button,
+.ghost-button,
+.filter-button {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 12px 14px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.provider-button.active,
+.filter-button.active,
+.primary-button {
+  border-color: rgba(124, 178, 255, 0.75);
+  background: rgba(63, 120, 255, 0.22);
+}
+
+.provider-button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: flex-start;
+}
+
+.provider-icon {
+  display: inline-flex;
+  width: 22px;
+  justify-content: center;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field input,
+.field select {
+  width: 100%;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  padding: 10px 12px;
+  color: inherit;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.warn-text,
+.error-text,
+.error-banner {
+  color: #ffb0b0;
+}
+
+.content-panel {
+  padding: 20px;
+}
+
+.content-header {
+  margin-bottom: 16px;
+}
+
+.toolbar,
+.button-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.subtitle-list {
+  display: grid;
+  gap: 14px;
+}
+
+.subtitle-card {
+  padding: 16px;
+}
+
+.subtitle-topline,
+.subtitle-columns {
+  display: flex;
+  gap: 12px;
+}
+
+.subtitle-topline {
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.subtitle-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.subtitle-columns h3 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.subtitle-columns p {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #d8e3f8;
+}
+
+.chip,
+.timecode {
+  border-radius: 999px;
+  padding: 4px 10px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+}
+
+.timecode {
+  color: #9aabc7;
+}
+
+.status-error {
+  border-color: rgba(255, 129, 129, 0.45);
+}
+
+.status-done {
+  border-color: rgba(114, 255, 182, 0.35);
+}
+
+.status-retrying {
+  border-color: rgba(255, 211, 114, 0.5);
+}
+
+.log-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.log-item {
+  display: grid;
+  grid-template-columns: 72px 1fr;
+  gap: 8px;
+  font-size: 12px;
+  color: #b7c6dd;
+}
+
+.empty-state {
+  padding: 40px 16px;
+  text-align: center;
+  color: #9aabc7;
+}
+
+@media (max-width: 960px) {
+  .app-shell {
+    grid-template-columns: 1fr;
+  }
+
+  .subtitle-columns {
+    grid-template-columns: 1fr;
+  }
 }

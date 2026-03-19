@@ -49,6 +49,10 @@ function ensureNotAborted(signal?: AbortSignal) {
   }
 }
 
+function isCancellationError(error: unknown) {
+  return error instanceof Error && (error.message === 'cancelled' || error.name === 'AbortError');
+}
+
 export async function runTranslation(
   entries: SubtitleEntry[],
   options: RunTranslationOptions,
@@ -79,7 +83,7 @@ export async function runTranslation(
         };
       }
     } catch (error) {
-      if ((error as Error).message === 'cancelled') {
+      if (isCancellationError(error)) {
         throw error;
       }
 
@@ -140,7 +144,7 @@ export async function runRetry(
         };
       });
     } catch (error) {
-      if ((error as Error).message === 'cancelled') {
+      if (isCancellationError(error)) {
         throw error;
       }
 
