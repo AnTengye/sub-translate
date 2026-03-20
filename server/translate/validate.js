@@ -9,6 +9,24 @@ function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
 
+function isValidBatchMetadata(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  return (
+    (value.kind === 'translate' || value.kind === 'retry') &&
+    Number.isInteger(value.sequence) &&
+    Number.isInteger(value.startIndex) &&
+    Number.isInteger(value.endIndex) &&
+    Number.isInteger(value.totalEntries) &&
+    value.sequence >= 1 &&
+    value.startIndex >= 0 &&
+    value.endIndex >= value.startIndex &&
+    value.totalEntries >= value.endIndex + 1
+  );
+}
+
 export function validateTranslateRequest(provider, payload) {
   const allowedOptions = providerOptionAllowlist[provider];
   if (!allowedOptions) {
@@ -19,14 +37,22 @@ export function validateTranslateRequest(provider, payload) {
     throw new Error('请求体格式无效');
   }
 
-  const { texts, contextTexts = [], options = {} } = payload;
+  const { runId, texts, contextTexts = [], batch, options = {} } = payload;
 
   if (!isStringArray(texts) || texts.length === 0) {
     throw new Error('至少提供一条待翻译字幕');
   }
 
+  if (runId !== undefined && typeof runId !== 'string') {
+    throw new Error('运行标识格式无效');
+  }
+
   if (!isStringArray(contextTexts)) {
     throw new Error('上下文字幕格式无效');
+  }
+
+  if (batch !== undefined && !isValidBatchMetadata(batch)) {
+    throw new Error('批次元信息格式无效');
   }
 
   if (!options || typeof options !== 'object' || Array.isArray(options)) {
@@ -39,8 +65,10 @@ export function validateTranslateRequest(provider, payload) {
   }
 
   return {
+    runId,
     texts,
     contextTexts,
+    batch,
     options,
   };
 }

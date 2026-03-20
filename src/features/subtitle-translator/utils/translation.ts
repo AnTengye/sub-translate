@@ -1,8 +1,15 @@
 import type { SubtitleEntry } from '../../../lib/subtitle/types';
+import type { TranslationBatchMetadata } from '../../../lib/providers/types';
 
-type DispatchTranslate = (texts: string[], contextTexts: string[]) => Promise<string[]>;
+type DispatchTranslate = (
+  texts: string[],
+  contextTexts: string[],
+  batch: TranslationBatchMetadata,
+  runId: string,
+) => Promise<string[]>;
 
 interface SharedOptions {
+  runId: string;
   batchSize: number;
   contextLines: number;
   dispatchTranslate: DispatchTranslate;
@@ -66,12 +73,21 @@ export async function runTranslation(
     const end = Math.min(start + options.batchSize, total);
     const batch = entries.slice(start, end);
     const context = getContextBefore(results, start, options.contextLines);
+    const batchMetadata: TranslationBatchMetadata = {
+      kind: 'translate',
+      sequence: Math.floor(start / options.batchSize) + 1,
+      startIndex: start,
+      endIndex: end - 1,
+      totalEntries: total,
+    };
     options.onLog(`📝 翻译 ${start + 1}–${end} / ${total}`);
 
     try {
       const translated = await options.dispatchTranslate(
         batch.map((entry) => entry.text),
         context,
+        batchMetadata,
+        options.runId,
       );
 
       for (let index = 0; index < batch.length; index += 1) {
@@ -131,9 +147,16 @@ export async function runRetry(
 
     const context = getContextBefore(results, batch[0] ?? 0, options.contextLines);
     const texts = batch.map((entryIndex) => results[entryIndex].text);
+    const batchMetadata: TranslationBatchMetadata = {
+      kind: 'retry',
+      sequence: batchIndex + 1,
+      startIndex: batch[0],
+      endIndex: batch[batch.length - 1],
+      totalEntries: results.length,
+    };
 
     try {
-      const translated = await options.dispatchTranslate(texts, context);
+      const translated = await options.dispatchTranslate(texts, context, batchMetadata, options.runId);
       batch.forEach((entryIndex, index) => {
         const text = translated[index];
         const success = Boolean(text) && text !== '[翻译失败]';

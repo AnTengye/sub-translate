@@ -67,5 +67,23 @@ export async function translateWithBaidu(request, signal, deps = {}) {
     throw new Error(`百度翻译错误 ${data.error_code}: ${data.error_msg}`);
   }
 
-  return (data.trans_result ?? []).map((item) => item.dst);
+  return {
+    translations: (data.trans_result ?? []).map((item) => item.dst),
+    debug: {
+      request: {
+        endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+        headers: Object.fromEntries(
+          Object.entries(headers).map(([key, value]) => [
+            key,
+            key.toLowerCase() === 'authorization' ? 'Bearer [REDACTED]' : value,
+          ]),
+        ),
+        payload: body,
+      },
+      response: {
+        status: response.status,
+        rawText: JSON.stringify(data),
+      },
+    },
+  };
 }

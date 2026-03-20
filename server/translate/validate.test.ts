@@ -5,8 +5,16 @@ describe('validateTranslateRequest', () => {
   it('normalizes a valid proxy translation request', () => {
     expect(
       validateTranslateRequest('openai', {
+        runId: 'run-123',
         texts: ['こんにちは'],
         contextTexts: ['前文'],
+        batch: {
+          kind: 'translate',
+          sequence: 1,
+          startIndex: 0,
+          endIndex: 0,
+          totalEntries: 1,
+        },
         options: {
           endpoint: 'https://api.openai.com/v1',
           model: 'gpt-4o-mini',
@@ -14,8 +22,16 @@ describe('validateTranslateRequest', () => {
         },
       }),
     ).toEqual({
+      runId: 'run-123',
       texts: ['こんにちは'],
       contextTexts: ['前文'],
+      batch: {
+        kind: 'translate',
+        sequence: 1,
+        startIndex: 0,
+        endIndex: 0,
+        totalEntries: 1,
+      },
       options: {
         endpoint: 'https://api.openai.com/v1',
         model: 'gpt-4o-mini',
@@ -49,5 +65,21 @@ describe('validateTranslateRequest', () => {
         texts: ['こんにちは'],
       }),
     ).toThrow('不支持的翻译引擎');
+  });
+
+  it('rejects malformed batch metadata', () => {
+    expect(() =>
+      validateTranslateRequest('openai', {
+        runId: 'run-123',
+        texts: ['こんにちは'],
+        batch: {
+          kind: 'translate',
+          sequence: '1',
+          startIndex: 0,
+          endIndex: 0,
+          totalEntries: 1,
+        },
+      }),
+    ).toThrow('批次元信息格式无效');
   });
 });

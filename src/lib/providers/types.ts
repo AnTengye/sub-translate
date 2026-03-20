@@ -20,3 +20,31 @@ export interface ProviderDefinition {
 }
 
 export type ProviderId = 'claude' | 'openai' | 'qwen' | 'baidu';
+
+export interface TranslationBatchMetadata {
+  kind: 'translate' | 'retry';
+  sequence: number;
+  startIndex: number;
+  endIndex: number;
+  totalEntries: number;
+}
+
+export interface TranslationRunEntry {
+  idx: number;
+  timecode: string;
+  text: string;
+}
+
+export interface TranslationRunCreatePayload {
+  fileName: string;
+  provider: ProviderId;
+  totalEntries: number;
+  entries: TranslationRunEntry[];
+  providerConfig: Record<string, string>;
+  translationConfig: {
+    batchSize: number;
+    contextLines: number;
+    temperature: number;
+  };
+  mode: 'translate' | 'retry-all' | 'retry-single';
+}
