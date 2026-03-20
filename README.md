@@ -1,82 +1,76 @@
 # SRT Translate
 
-基于 `Vite + React + TypeScript + Node` 的日语字幕翻译工具，适合本机、NAS 或内网环境自用。当前版本通过本地代理服务统一转发各家翻译请求，浏览器不再直接持有第三方密钥。
+A Japanese subtitle translation tool built with `Vite + React + TypeScript + Node`, designed for local, NAS, or intranet deployment. The current version uses a local proxy service to forward translation requests, keeping third-party API keys secure on the server side.
 
-## 功能
+## Features
 
-- 支持 `.srt` 字幕解析、预览和导出
-- 支持点击上传和拖拽上传字幕文件
-- 支持 `OpenAI Compatible`、`Claude Compatible`、`百度大模型翻译`
-- 支持批量翻译、失败重试、单条重试
-- 支持本地开发和 Docker 私有部署
+- Parse, preview, and export `.srt` subtitle files
+- Click or drag-and-drop file upload
+- Support for `OpenAI Compatible`, `Claude Compatible`, and `Baidu AI Translation`
+- Batch translation with retry for failed items (individual or all)
+- Local development and Docker deployment support
 
-## 架构说明
+## Architecture
 
-项目现在是单服务架构：
+The project uses a single-service architecture:
 
-- 前端页面负责字幕上传、配置和进度展示
-- 本地 Node 服务负责：
-  - 提供前端页面
-  - 代理 `/api/translate/:provider`
-  - 读取服务端环境变量中的密钥
+- **Frontend**: Handles subtitle upload, configuration, and progress display
+- **Node.js Server**:
+  - Serves the frontend
+  - Proxies `/api/translate/:provider` requests
+  - Reads API keys from server-side environment variables
 
-这样做的直接收益是：
+Benefits:
 
-- 浏览器不需要再处理 CORS
-- `API Key / Secret / AppID` 不再出现在前端表单里
-- 百度翻译可以按最新大模型文本翻译接口接入
+- No CORS issues in the browser
+- `API Key / Secret / AppID` never exposed to the frontend
+- Baidu translation uses the latest AI text translation API
 
-## 本地开发
+## Quick Start
 
-1. 复制 `.env.example` 为 `.env`
-2. 至少填写你要使用的 provider 对应服务端密钥
-3. 启动开发服务：
+### Local Development
+
+1. Copy `.env.example` to `.env`
+2. Fill in the API keys for the providers you want to use
+3. Start the development server:
 
 ```bash
 npm install
 npm run dev
 ```
 
-默认地址：
+Default URL: `http://localhost:3000`
 
-```text
-http://localhost:3000
-```
+The dev server handles both the frontend and API proxy.
 
-开发模式下由同一个 Node 服务承载前端和 `/api` 代理。
+### Production
 
-## 生产运行
-
-先构建，再启动：
+Build and start:
 
 ```bash
 npm run build
 npm run start
 ```
 
-## Docker 部署
+### Docker
 
 ```bash
 docker compose up --build -d
 ```
 
-访问：
+Access at `http://localhost:8080`
 
-```text
-http://localhost:8080
-```
-
-停止：
+Stop with:
 
 ```bash
 docker compose down
 ```
 
-## 环境变量
+## Configuration
 
-### 前端默认值
+### Frontend Defaults
 
-这些变量只用于提供前端默认标题、默认 provider 和默认模型：
+These variables provide default UI values:
 
 ```env
 VITE_APP_TITLE=SRT Translate
@@ -85,80 +79,85 @@ VITE_CLAUDE_MODEL=claude-3-5-sonnet-latest
 VITE_OPENAI_MODEL=gpt-4o-mini
 ```
 
-### 服务端 provider 配置
+### Server Provider Config
 
-这些变量由本地代理服务读取，不会再显示在前端表单里：
+These variables are read by the server and never exposed to the frontend:
 
 ```env
+# Server port (optional, default: 3000)
+PORT=3000
+
+# Claude
 CLAUDE_API_ENDPOINT=https://api.anthropic.com/v1
-CLAUDE_API_KEY=
+CLAUDE_API_KEY=your_claude_api_key
+
+# OpenAI Compatible (OpenAI, Qwen, DeepSeek, Moonshot, OpenRouter, etc.)
 OPENAI_API_ENDPOINT=https://api.openai.com/v1
-OPENAI_API_KEY=
+OPENAI_API_KEY=your_openai_api_key
+
+# Baidu AI Translation
 BAIDU_API_ENDPOINT=https://fanyi-api.baidu.com/ait/api/aiTextTranslate
-BAIDU_APP_ID=
-BAIDU_API_KEY=
-BAIDU_SECRET_KEY=
+BAIDU_APP_ID=your_app_id
+BAIDU_API_KEY=your_api_key
+BAIDU_SECRET_KEY=your_secret_key
 ```
 
-说明：
+#### Provider Notes
 
-- `CLAUDE_API_ENDPOINT`：Claude Compatible 请求基地址，最终请求路径为 `/messages`
-- `CLAUDE_API_KEY`：Claude 服务端密钥
-- `OPENAI_API_ENDPOINT`：OpenAI Compatible 请求基地址，最终请求路径为 `/chat/completions`
-- `OPENAI_API_KEY`：OpenAI Compatible 服务端密钥，可用于 OpenAI、Qwen、DeepSeek、Moonshot、OpenRouter 等兼容服务
-- `BAIDU_API_ENDPOINT`：百度大模型文本翻译请求地址
-- `BAIDU_APP_ID`：百度翻译 APPID
-- `BAIDU_API_KEY`：百度大模型文本翻译推荐鉴权方式
-- `BAIDU_SECRET_KEY`：百度 `sign` 鉴权回退方式，只有在未配置 `BAIDU_API_KEY` 时才会使用
+| Provider | Endpoint | Key |
+|----------|----------|-----|
+| Claude | Base URL, `/messages` appended | `CLAUDE_API_KEY` |
+| OpenAI Compatible | Base URL, `/chat/completions` appended | `OPENAI_API_KEY` |
+| Baidu | Full API URL | `BAIDU_API_KEY` (primary) or `BAIDU_SECRET_KEY` (fallback) |
 
-## 百度翻译接入说明
+**Baidu Authentication:**
+- Primary: `Authorization: Bearer YOUR_API_KEY`
+- Fallback: `appid + q + salt + secretKey` MD5 signature (used when `BAIDU_API_KEY` is not set)
 
-百度当前接入按“大模型文本翻译 API”处理：
-
-- 地址：`https://fanyi-api.baidu.com/ait/api/aiTextTranslate`
-- 默认鉴权：`Authorization: Bearer YOUR_API_KEY`
-- 回退鉴权：`appid + q + salt + secretKey` 的 `MD5 sign`
-
-前端只保留非敏感选项，例如：
-
-- `modelType`：`llm` 或 `nmt`
-- `reference`：翻译指令
-
-## 测试与构建
+## Development
 
 ```bash
+# Run tests
 npm test
+
+# Run tests in watch mode
+npm run test:watch
+
+# Build for production
 npm run build
+
+# Preview production build
+npm run preview
 ```
 
-## 翻译日志
+## Translation Logs
 
-- 每次开始翻译、重试全部失败项、重试单条字幕，服务端都会创建一个独立的任务日志
-- 默认落盘目录：`logs/translations/YYYY-MM-DD/`
-- 日志文件为 `JSON`，会持续更新，最终状态为 `completed`、`failed` 或 `cancelled`
+Each translation task (including retries) generates a log file:
 
-日志内容包括：
+- Location: `logs/translations/YYYY-MM-DD/`
+- Format: JSON
+- Status: `completed`, `failed`, or `cancelled`
 
-- 本次任务的文件名、provider、批量参数、上下文参数
-- 原始字幕清单（包含字幕序号、时间码、原文）
-- 每个批次的请求内容、完整 prompt、provider 选项
-- 大模型原始响应内容
-- 回填映射结果：写回到哪个字幕索引、对应时间码、原文、译文、成功/失败状态
-- 批次级错误信息和整次任务汇总
+Log contents:
 
-说明：
+- File name, provider, batch parameters, context settings
+- Original subtitle list (index, timestamp, text)
+- Batch requests with full prompts and provider options
+- Raw LLM responses
+- Fill-in results (target index, timestamp, original, translated, status)
+- Batch errors and task summary
 
-- 所有服务端密钥、鉴权头都会脱敏，不会写入日志
-- 日志文件用于排查错位、多翻、漏翻等问题，建议保留一段时间后再清理
+**Security:** All API keys and auth headers are redacted from logs.
 
-## 项目结构
+## Project Structure
 
-```text
+```
 src/
-  features/subtitle-translator/   # 页面、组件、hooks、状态管理
-  lib/subtitle/                   # SRT 解析与导出
-  lib/providers/                  # provider 元数据与前端代理适配
+  features/subtitle-translator/   # Pages, components, hooks, state
+  lib/subtitle/                   # SRT parse/export
+  lib/providers/                  # Provider metadata & frontend adapters
 server/
-  providers/                     # 服务端 provider 适配器
-  translate/                     # 服务端请求验证
+  providers/                      # Server-side provider adapters
+  translate/                      # Request validation
+  logging/                        # Translation run logging
 ```
