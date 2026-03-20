@@ -4,9 +4,10 @@
   "version": "0.1.0",
   "type": "module",
   "scripts": {
-    "dev": "vite",
+    "dev": "node --env-file-if-exists=.env server/start.js --mode=development",
     "build": "tsc -b && vite build",
-    "preview": "vite preview",
+    "preview": "node --env-file-if-exists=.env server/start.js --mode=production",
+    "start": "node --env-file-if-exists=.env server/start.js --mode=production",
     "test": "vitest run",
     "test:watch": "vitest"
   },

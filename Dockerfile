@@ -20,10 +20,14 @@ RUN npm ci
 COPY . .
 RUN npm run build
 
-FROM nginx:1.27-alpine
-COPY nginx.conf /etc/nginx/conf.d/default.conf
-COPY --from=build /app/dist /usr/share/nginx/html
+FROM node:22-alpine
+WORKDIR /app
 
-EXPOSE 80
+ENV PORT=3000
 
-CMD ["nginx", "-g", "daemon off;"]
+COPY --from=build /app/dist ./dist
+COPY --from=build /app/server ./server
+
+EXPOSE 3000
+
+CMD ["node", "server/start.js", "--mode=production"]

@@ -9,6 +9,14 @@ services:
         VITE_OPENAI_ENDPOINT: ${VITE_OPENAI_ENDPOINT:-https://api.openai.com/v1}
         VITE_OPENAI_MODEL: ${VITE_OPENAI_MODEL:-gpt-4o-mini}
         VITE_QWEN_MODEL: ${VITE_QWEN_MODEL:-qwen-mt-turbo}
+    environment:
+      PORT: 3000
+      CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-}
+      QWEN_API_KEY: ${QWEN_API_KEY:-}
+      BAIDU_APP_ID: ${BAIDU_APP_ID:-}
+      BAIDU_API_KEY: ${BAIDU_API_KEY:-}
+      BAIDU_SECRET_KEY: ${BAIDU_SECRET_KEY:-}
     ports:
-      - "8080:80"
+      - "8080:3000"
     restart: unless-stopped

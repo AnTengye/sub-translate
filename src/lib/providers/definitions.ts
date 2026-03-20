@@ -7,23 +7,22 @@ export const providerDefinitions: ProviderDefinition[] = [
     label: 'Claude (Anthropic)',
     icon: '◆',
     color: '#d4a96a',
-    desc: 'Anthropic Claude 模型，需要 API Key',
+    desc: 'Anthropic Claude 模型，密钥由本地代理服务提供',
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'sk-ant-...' },
       { key: 'model', label: '模型名称', type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
     ],
     defaults: {
       model: appEnv.claudeModel,
     } as Record<string, string>,
+    corsNote: '密钥不再在浏览器中填写，由服务端环境变量统一提供',
   },
   {
     id: 'openai',
     label: 'OpenAI / 兼容接口',
     icon: '◈',
     color: '#74b9ff',
-    desc: 'GPT-4o、DeepSeek、Moonshot 等 OpenAI 兼容接口',
+    desc: 'GPT-4o、DeepSeek、Moonshot 等 OpenAI 兼容接口，密钥由本地代理服务提供',
     fields: [
-      { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'sk-...' },
       {
         key: 'endpoint',
         label: 'API 端点',
@@ -36,15 +35,15 @@ export const providerDefinitions: ProviderDefinition[] = [
       endpoint: appEnv.openAiEndpoint,
       model: appEnv.openAiModel,
     } as Record<string, string>,
+    corsNote: '前端仅传模型与端点配置，真正的 API Key 由服务端读取',
   },
   {
     id: 'qwen',
     label: '通义千问 Qwen-MT',
     icon: '◉',
     color: '#55efc4',
-    desc: '阿里云百炼，专业机器翻译模型',
+    desc: '阿里云百炼，专业机器翻译模型，密钥由本地代理服务提供',
     fields: [
-      { key: 'apiKey', label: 'API Key (百炼)', type: 'password', placeholder: 'sk-...' },
       {
         key: 'qwenModel',
         label: '翻译模型',
@@ -55,25 +54,26 @@ export const providerDefinitions: ProviderDefinition[] = [
     defaults: {
       qwenModel: appEnv.qwenModel,
     } as Record<string, string>,
-    corsNote: '注意：需在浏览器端支持 CORS，建议配合代理服务',
+    corsNote: '浏览器不再直连百炼接口，本地代理会代持密钥并转发请求',
   },
   {
     id: 'baidu',
-    label: '百度翻译 API',
+    label: '百度大模型翻译 API',
     icon: '◇',
     color: '#fd79a8',
-    desc: '百度通用翻译 API，需要 AppID 和密钥',
+    desc: '百度大模型文本翻译 API，默认走服务端 Bearer 鉴权',
     fields: [
-      { key: 'appId', label: 'APP ID', type: 'text', placeholder: '百度翻译 APP ID' },
-      { key: 'secretKey', label: '密钥', type: 'password', placeholder: '百度翻译密钥' },
       {
-        key: 'proxyUrl',
-        label: 'CORS 代理地址 (可选)',
-        type: 'text',
-        placeholder: 'https://corsproxy.io/?',
+        key: 'modelType',
+        label: '翻译模型',
+        type: 'select',
+        options: ['llm', 'nmt'],
       },
+      { key: 'reference', label: '翻译指令', type: 'text', placeholder: '例如：保持口语自然' },
     ],
-    defaults: {} as Record<string, string>,
-    corsNote: '浏览器直连可能遇到 CORS 限制，建议填写代理地址',
+    defaults: {
+      modelType: 'llm',
+    } as Record<string, string>,
+    corsNote: '服务端负责 APPID / API Key；如未配置 API Key，可回退到 sign 鉴权',
   },
 ];
