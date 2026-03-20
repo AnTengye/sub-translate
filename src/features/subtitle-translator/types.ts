@@ -1,4 +1,5 @@
 import type { SubtitleEntry } from '../../lib/subtitle/types';
+import type { ProviderId } from '../../lib/providers/types';
 
 export interface TranslationConfig {
   batchSize: number;
@@ -20,7 +21,7 @@ export interface SubtitleTranslatorState {
   fileName: string;
   entries: SubtitleEntry[];
   display: SubtitleEntry[];
-  provider: 'claude' | 'openai' | 'qwen' | 'baidu';
+  provider: ProviderId;
   providerConfig: Record<string, string>;
   translationConfig: TranslationConfig;
   progress: number;

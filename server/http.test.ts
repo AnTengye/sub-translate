@@ -59,7 +59,7 @@ describe('createAppServer', () => {
       },
       body: JSON.stringify({
         fileName: 'sample.srt',
-        provider: 'openai',
+        provider: 'openai-compatible',
         totalEntries: 1,
         entries: [
           {
@@ -83,7 +83,7 @@ describe('createAppServer', () => {
     const createData = await createResponse.json();
     expect(createData.runId).toEqual(expect.any(String));
 
-    const translateResponse = await fetch(`${app.baseUrl}/api/translate/openai`, {
+    const translateResponse = await fetch(`${app.baseUrl}/api/translate/openai-compatible`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -156,7 +156,7 @@ describe('createAppServer', () => {
       },
     });
 
-    const response = await fetch(`${app.baseUrl}/api/translate/openai`, {
+    const response = await fetch(`${app.baseUrl}/api/translate/openai-compatible`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -199,7 +199,7 @@ describe('createAppServer', () => {
       },
       body: JSON.stringify({
         fileName: 'sample.srt',
-        provider: 'openai',
+        provider: 'openai-compatible',
         totalEntries: 1,
         entries: [
           {
@@ -220,7 +220,7 @@ describe('createAppServer', () => {
     });
     const createData = await createResponse.json();
 
-    const translateResponse = await fetch(`${app.baseUrl}/api/translate/openai`, {
+    const translateResponse = await fetch(`${app.baseUrl}/api/translate/openai-compatible`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

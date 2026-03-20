@@ -8,6 +8,7 @@ export async function translateWithBaidu(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
   const now = deps.now ?? Date.now;
+  const endpoint = env.BAIDU_API_ENDPOINT || 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate';
 
   if (!env.BAIDU_APP_ID) {
     throw new Error('服务端未配置 BAIDU_APP_ID');
@@ -51,7 +52,7 @@ export async function translateWithBaidu(request, signal, deps = {}) {
     throw new Error('服务端未配置 BAIDU_API_KEY 或 BAIDU_SECRET_KEY');
   }
 
-  const response = await fetchImpl('https://fanyi-api.baidu.com/ait/api/aiTextTranslate', {
+  const response = await fetchImpl(endpoint, {
     method: 'POST',
     signal,
     headers,
@@ -71,7 +72,7 @@ export async function translateWithBaidu(request, signal, deps = {}) {
     translations: (data.trans_result ?? []).map((item) => item.dst),
     debug: {
       request: {
-        endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+        endpoint,
         headers: Object.fromEntries(
           Object.entries(headers).map(([key, value]) => [
             key,

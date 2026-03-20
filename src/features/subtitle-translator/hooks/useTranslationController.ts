@@ -47,7 +47,7 @@ export function useTranslationController(
         Object.entries(state.providerConfig).filter(([, value]) => value !== ''),
       ) as Record<string, string>;
 
-      if (state.provider === 'openai' || state.provider === 'qwen') {
+      if (state.provider === 'openai-compatible') {
         config.temperature = String(state.translationConfig.temperature);
       }
 

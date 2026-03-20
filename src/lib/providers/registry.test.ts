@@ -14,14 +14,13 @@ describe('provider registry', () => {
   });
 
   it('returns metadata for supported providers', () => {
-    expect(getProviderDefinition('openai').label).toContain('OpenAI');
+    expect(getProviderDefinition('openai-compatible').label).toContain('OpenAI');
   });
 
   it('lists all supported providers', () => {
     expect(listProviderDefinitions().map((provider) => provider.id)).toEqual([
-      'claude',
-      'openai',
-      'qwen',
+      'openai-compatible',
+      'claude-compatible',
       'baidu',
     ]);
   });
@@ -38,7 +37,7 @@ describe('provider registry', () => {
 
     await expect(
       dispatchTranslate(
-        'openai',
+        'openai-compatible',
         ['こんにちは'],
         [],
         {
@@ -50,7 +49,6 @@ describe('provider registry', () => {
         },
         'run-123',
         {
-          endpoint: 'https://api.openai.com/v1',
           model: 'gpt-4o-mini',
           temperature: '0.2',
         },
@@ -59,7 +57,7 @@ describe('provider registry', () => {
     ).resolves.toEqual(['你好']);
 
     expect(fetch).toHaveBeenCalledWith(
-      '/api/translate/openai',
+      '/api/translate/openai-compatible',
       expect.objectContaining({
         method: 'POST',
         headers: {
@@ -77,7 +75,6 @@ describe('provider registry', () => {
             totalEntries: 1,
           },
           options: {
-            endpoint: 'https://api.openai.com/v1',
             model: 'gpt-4o-mini',
             temperature: '0.2',
           },
@@ -109,7 +106,7 @@ describe('provider registry', () => {
       createTranslationRun(
         {
           fileName: 'sample.srt',
-          provider: 'openai',
+          provider: 'openai-compatible',
           totalEntries: 1,
           entries: [
             {

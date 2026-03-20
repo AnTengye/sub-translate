@@ -34,9 +34,10 @@ describe('SubtitleTranslatorPage', () => {
     expect(screen.getByText(/工作阶段/i)).toBeInTheDocument();
     expect(screen.getByText(/总条目/i)).toBeInTheDocument();
     expect(await screen.findByText(/翻译引擎/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /OpenAI \/ 兼容接口/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /OpenAI Compatible/i })).toBeInTheDocument();
     expect(screen.queryByLabelText(/API Key/i)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/模型名称/i)).toBeInTheDocument();
+    expect(screen.queryByLabelText(/API 端点/i)).not.toBeInTheDocument();
   });
 
   it('imports subtitle files through drag and drop', async () => {

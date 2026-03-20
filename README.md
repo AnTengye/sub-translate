@@ -6,7 +6,7 @@
 
 - 支持 `.srt` 字幕解析、预览和导出
 - 支持点击上传和拖拽上传字幕文件
-- 支持 `Claude`、`OpenAI 兼容接口`、`Qwen`、`百度大模型翻译`
+- 支持 `OpenAI Compatible`、`Claude Compatible`、`百度大模型翻译`
 - 支持批量翻译、失败重试、单条重试
 - 支持本地开发和 Docker 私有部署
 
@@ -76,25 +76,25 @@ docker compose down
 
 ### 前端默认值
 
-这些变量只用于提供前端默认模型或默认端点：
+这些变量只用于提供前端默认标题、默认 provider 和默认模型：
 
 ```env
 VITE_APP_TITLE=SRT Translate
-VITE_DEFAULT_PROVIDER=claude
+VITE_DEFAULT_PROVIDER=openai-compatible
 VITE_CLAUDE_MODEL=claude-3-5-sonnet-latest
-VITE_OPENAI_ENDPOINT=https://api.openai.com/v1
 VITE_OPENAI_MODEL=gpt-4o-mini
-VITE_QWEN_MODEL=qwen-mt-turbo
 ```
 
-### 服务端密钥
+### 服务端 provider 配置
 
 这些变量由本地代理服务读取，不会再显示在前端表单里：
 
 ```env
+CLAUDE_API_ENDPOINT=https://api.anthropic.com/v1
 CLAUDE_API_KEY=
+OPENAI_API_ENDPOINT=https://api.openai.com/v1
 OPENAI_API_KEY=
-QWEN_API_KEY=
+BAIDU_API_ENDPOINT=https://fanyi-api.baidu.com/ait/api/aiTextTranslate
 BAIDU_APP_ID=
 BAIDU_API_KEY=
 BAIDU_SECRET_KEY=
@@ -102,9 +102,11 @@ BAIDU_SECRET_KEY=
 
 说明：
 
+- `CLAUDE_API_ENDPOINT`：Claude Compatible 请求基地址，最终请求路径为 `/messages`
 - `CLAUDE_API_KEY`：Claude 服务端密钥
-- `OPENAI_API_KEY`：OpenAI / OpenAI 兼容接口服务端密钥
-- `QWEN_API_KEY`：阿里云百炼服务端密钥
+- `OPENAI_API_ENDPOINT`：OpenAI Compatible 请求基地址，最终请求路径为 `/chat/completions`
+- `OPENAI_API_KEY`：OpenAI Compatible 服务端密钥，可用于 OpenAI、Qwen、DeepSeek、Moonshot、OpenRouter 等兼容服务
+- `BAIDU_API_ENDPOINT`：百度大模型文本翻译请求地址
 - `BAIDU_APP_ID`：百度翻译 APPID
 - `BAIDU_API_KEY`：百度大模型文本翻译推荐鉴权方式
 - `BAIDU_SECRET_KEY`：百度 `sign` 鉴权回退方式，只有在未配置 `BAIDU_API_KEY` 时才会使用

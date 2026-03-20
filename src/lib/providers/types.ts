@@ -9,7 +9,7 @@ export interface ProviderFieldDefinition {
 }
 
 export interface ProviderDefinition {
-  id: string;
+  id: ProviderId;
   label: string;
   icon: string;
   color: string;
@@ -19,7 +19,7 @@ export interface ProviderDefinition {
   corsNote?: string;
 }
 
-export type ProviderId = 'claude' | 'openai' | 'qwen' | 'baidu';
+export type ProviderId = 'openai-compatible' | 'claude-compatible' | 'baidu';
 
 export interface TranslationBatchMetadata {
   kind: 'translate' | 'retry';

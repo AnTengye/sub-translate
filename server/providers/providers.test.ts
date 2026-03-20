@@ -6,7 +6,7 @@ describe('server provider adapters', () => {
     vi.restoreAllMocks();
   });
 
-  it('uses server-side OpenAI credentials for OpenAI-compatible requests', async () => {
+  it('uses server-side OpenAI-compatible credentials and endpoint', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -21,12 +21,11 @@ describe('server provider adapters', () => {
 
     await expect(
       dispatchServerTranslate(
-        'openai',
+        'openai-compatible',
         {
           texts: ['こんにちは'],
           contextTexts: [],
           options: {
-            endpoint: 'https://api.openai.com/v1',
             model: 'gpt-4o-mini',
             temperature: 0.2,
           },
@@ -36,6 +35,7 @@ describe('server provider adapters', () => {
           fetchImpl,
           env: {
             OPENAI_API_KEY: 'sk-server',
+            OPENAI_API_ENDPOINT: 'https://openrouter.example/api/v1',
           },
         },
       ),
@@ -43,7 +43,7 @@ describe('server provider adapters', () => {
       translations: ['你好'],
       debug: {
         request: {
-          endpoint: 'https://api.openai.com/v1/chat/completions',
+          endpoint: 'https://openrouter.example/api/v1/chat/completions',
           headers: {
             'Content-Type': 'application/json',
             Authorization: 'Bearer [REDACTED]',
@@ -65,7 +65,7 @@ describe('server provider adapters', () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://api.openai.com/v1/chat/completions',
+      'https://openrouter.example/api/v1/chat/completions',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -75,7 +75,74 @@ describe('server provider adapters', () => {
     );
   });
 
-  it('uses Baidu AI text translation endpoint with Bearer auth by default', async () => {
+  it('uses server-side Claude-compatible credentials and endpoint', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          content: [{ text: '["你好"]' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      dispatchServerTranslate(
+        'claude-compatible',
+        {
+          texts: ['こんにちは'],
+          contextTexts: [],
+          options: {
+            model: 'claude-3-5-sonnet-latest',
+          },
+        },
+        new AbortController().signal,
+        {
+          fetchImpl,
+          env: {
+            CLAUDE_API_KEY: 'sk-claude',
+            CLAUDE_API_ENDPOINT: 'https://claude-proxy.example/v1',
+          },
+        },
+      ),
+    ).resolves.toEqual({
+      translations: ['你好'],
+      debug: {
+        request: {
+          endpoint: 'https://claude-proxy.example/v1/messages',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-api-key': '[REDACTED]',
+            'anthropic-version': '2023-06-01',
+          },
+          payload: {
+            model: 'claude-3-5-sonnet-latest',
+            max_tokens: 2048,
+            system: expect.any(String),
+            messages: [expect.objectContaining({ role: 'user' })],
+          },
+        },
+        response: {
+          status: 200,
+          rawText: '["你好"]',
+        },
+      },
+    });
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://claude-proxy.example/v1/messages',
+      expect.objectContaining({
+        method: 'POST',
+        headers: expect.objectContaining({
+          'x-api-key': 'sk-claude',
+        }),
+      }),
+    );
+  });
+
+  it('uses the configured Baidu endpoint with Bearer auth by default', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
         JSON.stringify({
@@ -105,6 +172,7 @@ describe('server provider adapters', () => {
           env: {
             BAIDU_API_KEY: 'baidu-key',
             BAIDU_APP_ID: 'baidu-app',
+            BAIDU_API_ENDPOINT: 'https://baidu-proxy.example/translate',
           },
         },
       ),
@@ -112,7 +180,7 @@ describe('server provider adapters', () => {
       translations: ['你好'],
       debug: {
         request: {
-          endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+          endpoint: 'https://baidu-proxy.example/translate',
           headers: {
             Authorization: 'Bearer [REDACTED]',
             'Content-Type': 'application/json',
@@ -136,7 +204,7 @@ describe('server provider adapters', () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+      'https://baidu-proxy.example/translate',
       expect.objectContaining({
         method: 'POST',
         headers: expect.objectContaining({
@@ -183,6 +251,7 @@ describe('server provider adapters', () => {
           env: {
             BAIDU_APP_ID: 'baidu-app',
             BAIDU_SECRET_KEY: 'baidu-secret',
+            BAIDU_API_ENDPOINT: 'https://baidu-proxy.example/translate',
           },
         },
       ),
@@ -190,7 +259,7 @@ describe('server provider adapters', () => {
       translations: ['你好'],
       debug: {
         request: {
-          endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+          endpoint: 'https://baidu-proxy.example/translate',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -213,7 +282,7 @@ describe('server provider adapters', () => {
     });
 
     expect(fetchImpl).toHaveBeenCalledWith(
-      'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+      'https://baidu-proxy.example/translate',
       expect.objectContaining({
         method: 'POST',
         headers: expect.not.objectContaining({

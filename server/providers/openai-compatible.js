@@ -56,7 +56,7 @@ function parseTranslationResponse(text, count) {
 export async function translateWithOpenAiCompatible(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
-  const endpoint = (request.options.endpoint || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const endpoint = (env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1').replace(/\/$/, '');
 
   if (!env.OPENAI_API_KEY) {
     throw new Error('服务端未配置 OPENAI_API_KEY');

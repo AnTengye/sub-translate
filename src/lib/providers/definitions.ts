@@ -3,58 +3,32 @@ import type { ProviderDefinition } from './types';
 
 export const providerDefinitions: ProviderDefinition[] = [
   {
-    id: 'claude',
-    label: 'Claude (Anthropic)',
+    id: 'openai-compatible',
+    label: 'OpenAI Compatible',
+    icon: '◈',
+    color: '#74b9ff',
+    desc: '适用于 OpenAI、Qwen、DeepSeek、Moonshot、OpenRouter 等兼容 /chat/completions 的服务',
+    fields: [
+      { key: 'model', label: '模型名称', type: 'text', placeholder: 'gpt-4o-mini' },
+    ],
+    defaults: {
+      model: appEnv.openAiModel,
+    } as Record<string, string>,
+    corsNote: '请求地址与 API Key 由服务端环境变量统一提供，前端只配置模型和温度',
+  },
+  {
+    id: 'claude-compatible',
+    label: 'Claude Compatible',
     icon: '◆',
     color: '#d4a96a',
-    desc: 'Anthropic Claude 模型，密钥由本地代理服务提供',
+    desc: '适用于 Anthropic Claude 及兼容 /v1/messages 的服务',
     fields: [
       { key: 'model', label: '模型名称', type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
     ],
     defaults: {
       model: appEnv.claudeModel,
     } as Record<string, string>,
-    corsNote: '密钥不再在浏览器中填写，由服务端环境变量统一提供',
-  },
-  {
-    id: 'openai',
-    label: 'OpenAI / 兼容接口',
-    icon: '◈',
-    color: '#74b9ff',
-    desc: 'GPT-4o、DeepSeek、Moonshot 等 OpenAI 兼容接口，密钥由本地代理服务提供',
-    fields: [
-      {
-        key: 'endpoint',
-        label: 'API 端点',
-        type: 'text',
-        placeholder: 'https://api.openai.com/v1',
-      },
-      { key: 'model', label: '模型名称', type: 'text', placeholder: 'gpt-4o-mini' },
-    ],
-    defaults: {
-      endpoint: appEnv.openAiEndpoint,
-      model: appEnv.openAiModel,
-    } as Record<string, string>,
-    corsNote: '前端仅传模型与端点配置，真正的 API Key 由服务端读取',
-  },
-  {
-    id: 'qwen',
-    label: '通义千问 Qwen-MT',
-    icon: '◉',
-    color: '#55efc4',
-    desc: '阿里云百炼，专业机器翻译模型，密钥由本地代理服务提供',
-    fields: [
-      {
-        key: 'qwenModel',
-        label: '翻译模型',
-        type: 'select',
-        options: ['qwen-mt-turbo', 'qwen-mt-plus', 'qwen-plus', 'qwen-turbo', 'qwen-long'],
-      },
-    ],
-    defaults: {
-      qwenModel: appEnv.qwenModel,
-    } as Record<string, string>,
-    corsNote: '浏览器不再直连百炼接口，本地代理会代持密钥并转发请求',
+    corsNote: '请求地址与 API Key 由服务端环境变量统一提供，前端只配置模型',
   },
   {
     id: 'baidu',

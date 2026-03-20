@@ -164,7 +164,7 @@ export function ProviderPanel({
           <strong className="field-value">{state.translationConfig.contextLines}</strong>
         </label>
 
-        {state.provider !== 'baidu' ? (
+        {state.provider === 'openai-compatible' ? (
           <label className="field">
             <span>Temperature</span>
             <input

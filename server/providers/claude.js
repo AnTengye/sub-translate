@@ -29,6 +29,7 @@ function parseTranslationResponse(text, count) {
 export async function translateWithClaude(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
+  const endpoint = (env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1').replace(/\/$/, '');
 
   if (!env.CLAUDE_API_KEY) {
     throw new Error('服务端未配置 CLAUDE_API_KEY');
@@ -41,7 +42,7 @@ export async function translateWithClaude(request, signal, deps = {}) {
     system,
     messages: [{ role: 'user', content: user }],
   };
-  const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
+  const response = await fetchImpl(`${endpoint}/messages`, {
     method: 'POST',
     signal,
     headers: {
@@ -63,7 +64,7 @@ export async function translateWithClaude(request, signal, deps = {}) {
     translations: parseTranslationResponse(rawText, request.texts.length),
     debug: {
       request: {
-        endpoint: 'https://api.anthropic.com/v1/messages',
+        endpoint: `${endpoint}/messages`,
         headers: {
           'Content-Type': 'application/json',
           'x-api-key': '[REDACTED]',

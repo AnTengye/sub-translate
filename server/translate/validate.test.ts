@@ -4,7 +4,7 @@ import { validateTranslateRequest } from './validate.js';
 describe('validateTranslateRequest', () => {
   it('normalizes a valid proxy translation request', () => {
     expect(
-      validateTranslateRequest('openai', {
+      validateTranslateRequest('openai-compatible', {
         runId: 'run-123',
         texts: ['こんにちは'],
         contextTexts: ['前文'],
@@ -16,7 +16,6 @@ describe('validateTranslateRequest', () => {
           totalEntries: 1,
         },
         options: {
-          endpoint: 'https://api.openai.com/v1',
           model: 'gpt-4o-mini',
           temperature: 0.2,
         },
@@ -33,7 +32,6 @@ describe('validateTranslateRequest', () => {
         totalEntries: 1,
       },
       options: {
-        endpoint: 'https://api.openai.com/v1',
         model: 'gpt-4o-mini',
         temperature: 0.2,
       },
@@ -42,7 +40,7 @@ describe('validateTranslateRequest', () => {
 
   it('rejects empty subtitle batches', () => {
     expect(() =>
-      validateTranslateRequest('claude', {
+      validateTranslateRequest('claude-compatible', {
         texts: [],
       }),
     ).toThrow('至少提供一条待翻译字幕');
@@ -50,13 +48,13 @@ describe('validateTranslateRequest', () => {
 
   it('rejects provider options outside the allowlist', () => {
     expect(() =>
-      validateTranslateRequest('baidu', {
+      validateTranslateRequest('openai-compatible', {
         texts: ['こんにちは'],
         options: {
-          apiKey: 'should-not-come-from-client',
+          endpoint: 'https://should-not-come-from-client',
         },
       }),
-    ).toThrow('存在不允许的配置项: apiKey');
+    ).toThrow('存在不允许的配置项: endpoint');
   });
 
   it('rejects unknown providers', () => {
@@ -69,7 +67,7 @@ describe('validateTranslateRequest', () => {
 
   it('rejects malformed batch metadata', () => {
     expect(() =>
-      validateTranslateRequest('openai', {
+      validateTranslateRequest('openai-compatible', {
         runId: 'run-123',
         texts: ['こんにちは'],
         batch: {

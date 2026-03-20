@@ -1,7 +1,6 @@
 const providerOptionAllowlist = {
-  claude: new Set(['model']),
-  openai: new Set(['endpoint', 'model', 'temperature']),
-  qwen: new Set(['qwenModel', 'temperature']),
+  'claude-compatible': new Set(['model']),
+  'openai-compatible': new Set(['model', 'temperature']),
   baidu: new Set(['modelType', 'reference', 'needIntervene', 'tagHandling', 'ignoreTags']),
 };
 
