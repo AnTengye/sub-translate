@@ -63,6 +63,14 @@ export async function translateWithOpenAiCompatible(request, signal, deps = {}) 
   }
 
   const { system, user } = buildTranslationMessages(request.texts, request.contextTexts);
+  const payload = {
+    model: request.options.model || 'gpt-4o-mini',
+    temperature: Number.parseFloat(String(request.options.temperature ?? 0.3)) || 0.3,
+    messages: [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ],
+  };
   const response = await fetchImpl(`${endpoint}/chat/completions`, {
     method: 'POST',
     signal,
@@ -70,14 +78,7 @@ export async function translateWithOpenAiCompatible(request, signal, deps = {}) 
       'Content-Type': 'application/json',
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
     },
-    body: JSON.stringify({
-      model: request.options.model || 'gpt-4o-mini',
-      temperature: Number.parseFloat(String(request.options.temperature ?? 0.3)) || 0.3,
-      messages: [
-        { role: 'system', content: system },
-        { role: 'user', content: user },
-      ],
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -86,5 +87,23 @@ export async function translateWithOpenAiCompatible(request, signal, deps = {}) 
   }
 
   const data = await response.json();
-  return parseTranslationResponse(data.choices?.[0]?.message?.content ?? '', request.texts.length);
+  const rawText = data.choices?.[0]?.message?.content ?? '';
+
+  return {
+    translations: parseTranslationResponse(rawText, request.texts.length),
+    debug: {
+      request: {
+        endpoint: `${endpoint}/chat/completions`,
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: 'Bearer [REDACTED]',
+        },
+        payload,
+      },
+      response: {
+        status: response.status,
+        rawText,
+      },
+    },
+  };
 }

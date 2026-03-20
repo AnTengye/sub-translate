@@ -35,6 +35,12 @@ export async function translateWithClaude(request, signal, deps = {}) {
   }
 
   const { system, user } = buildTranslationMessages(request.texts, request.contextTexts);
+  const payload = {
+    model: request.options.model || 'claude-3-5-sonnet-latest',
+    max_tokens: 2048,
+    system,
+    messages: [{ role: 'user', content: user }],
+  };
   const response = await fetchImpl('https://api.anthropic.com/v1/messages', {
     method: 'POST',
     signal,
@@ -43,12 +49,7 @@ export async function translateWithClaude(request, signal, deps = {}) {
       'x-api-key': env.CLAUDE_API_KEY,
       'anthropic-version': '2023-06-01',
     },
-    body: JSON.stringify({
-      model: request.options.model || 'claude-3-5-sonnet-latest',
-      max_tokens: 2048,
-      system,
-      messages: [{ role: 'user', content: user }],
-    }),
+    body: JSON.stringify(payload),
   });
 
   if (!response.ok) {
@@ -57,5 +58,23 @@ export async function translateWithClaude(request, signal, deps = {}) {
   }
 
   const data = await response.json();
-  return parseTranslationResponse(data.content?.[0]?.text ?? '[]', request.texts.length);
+  const rawText = data.content?.[0]?.text ?? '[]';
+  return {
+    translations: parseTranslationResponse(rawText, request.texts.length),
+    debug: {
+      request: {
+        endpoint: 'https://api.anthropic.com/v1/messages',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-api-key': '[REDACTED]',
+          'anthropic-version': '2023-06-01',
+        },
+        payload,
+      },
+      response: {
+        status: response.status,
+        rawText,
+      },
+    },
+  };
 }

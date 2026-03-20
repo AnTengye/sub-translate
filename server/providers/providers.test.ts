@@ -39,7 +39,30 @@ describe('server provider adapters', () => {
           },
         },
       ),
-    ).resolves.toEqual(['你好']);
+    ).resolves.toEqual({
+      translations: ['你好'],
+      debug: {
+        request: {
+          endpoint: 'https://api.openai.com/v1/chat/completions',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer [REDACTED]',
+          },
+          payload: {
+            model: 'gpt-4o-mini',
+            temperature: 0.2,
+            messages: [
+              expect.objectContaining({ role: 'system' }),
+              expect.objectContaining({ role: 'user' }),
+            ],
+          },
+        },
+        response: {
+          status: 200,
+          rawText: '["你好"]',
+        },
+      },
+    });
 
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://api.openai.com/v1/chat/completions',
@@ -85,7 +108,32 @@ describe('server provider adapters', () => {
           },
         },
       ),
-    ).resolves.toEqual(['你好']);
+    ).resolves.toEqual({
+      translations: ['你好'],
+      debug: {
+        request: {
+          endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+          headers: {
+            Authorization: 'Bearer [REDACTED]',
+            'Content-Type': 'application/json',
+          },
+          payload: {
+            appid: 'baidu-app',
+            from: 'jp',
+            to: 'zh',
+            q: 'こんにちは',
+            model_type: 'llm',
+            reference: '保持口语自然',
+          },
+        },
+        response: {
+          status: 200,
+          rawText: JSON.stringify({
+            trans_result: [{ src: 'こんにちは', dst: '你好' }],
+          }),
+        },
+      },
+    });
 
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
@@ -138,7 +186,31 @@ describe('server provider adapters', () => {
           },
         },
       ),
-    ).resolves.toEqual(['你好']);
+    ).resolves.toEqual({
+      translations: ['你好'],
+      debug: {
+        request: {
+          endpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          payload: {
+            appid: 'baidu-app',
+            from: 'jp',
+            to: 'zh',
+            q: 'こんにちは',
+            salt: '1234567890',
+            sign: 'e62b6d999bdc54c1d655787a0e9f0ffb',
+          },
+        },
+        response: {
+          status: 200,
+          rawText: JSON.stringify({
+            trans_result: [{ src: 'こんにちは', dst: '你好' }],
+          }),
+        },
+      },
+    });
 
     expect(fetchImpl).toHaveBeenCalledWith(
       'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',

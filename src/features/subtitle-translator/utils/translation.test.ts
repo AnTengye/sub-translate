@@ -24,6 +24,7 @@ describe('runTranslation', () => {
     const result = await runTranslation(
       [createEntry(1, '1'), createEntry(2, '2'), createEntry(3, '3')],
       {
+        runId: 'run-123',
         batchSize: 2,
         contextLines: 1,
         dispatchTranslate,
@@ -40,6 +41,19 @@ describe('runTranslation', () => {
     expect(result[1].translated).toBe('二');
     expect(result[2].status).toBe('error');
     expect(updates.at(-1)).toBe(100);
+    expect(dispatchTranslate).toHaveBeenNthCalledWith(
+      1,
+      ['1', '2'],
+      [],
+      {
+        kind: 'translate',
+        sequence: 1,
+        startIndex: 0,
+        endIndex: 1,
+        totalEntries: 3,
+      },
+      'run-123',
+    );
   });
 });
 
@@ -54,6 +68,7 @@ describe('runRetry', () => {
     ];
 
     const result = await runRetry([1], entries, {
+      runId: 'run-retry',
       batchSize: 1,
       contextLines: 1,
       dispatchTranslate,
@@ -61,7 +76,18 @@ describe('runRetry', () => {
       onLog: vi.fn(),
     });
 
-    expect(dispatchTranslate).toHaveBeenCalledWith(['2'], ['前文']);
+    expect(dispatchTranslate).toHaveBeenCalledWith(
+      ['2'],
+      ['前文'],
+      {
+        kind: 'retry',
+        sequence: 1,
+        startIndex: 1,
+        endIndex: 1,
+        totalEntries: 2,
+      },
+      'run-retry',
+    );
     expect(result[1].translated).toBe('补译');
     expect(result[1].status).toBe('done');
     expect(onUpdate).toHaveBeenCalled();
