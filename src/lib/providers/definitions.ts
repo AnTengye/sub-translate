@@ -44,9 +44,11 @@ export const providerDefinitions: ProviderDefinition[] = [
         options: ['llm', 'nmt'],
       },
       { key: 'reference', label: '翻译指令', type: 'text', placeholder: '例如：保持口语自然' },
+      { key: 'punctuationPreprocessing', label: '标点预处理（实验性）', type: 'checkbox' },
     ],
     defaults: {
       modelType: 'llm',
+      punctuationPreprocessing: '',
     } as Record<string, string>,
     corsNote: '服务端负责 APPID / API Key；如未配置 API Key，可回退到 sign 鉴权',
   },

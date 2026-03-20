@@ -96,6 +96,20 @@ export function ProviderPanel({
                     </option>
                   ))}
                 </select>
+              ) : field.type === 'checkbox' ? (
+                <input
+                  aria-label={field.label}
+                  type="checkbox"
+                  checked={(state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'}
+                  disabled={disableInputs}
+                  onChange={(event) =>
+                    dispatch({
+                      type: 'updateProviderConfig',
+                      key: field.key,
+                      value: event.target.checked ? 'true' : '',
+                    })
+                  }
+                />
               ) : (
                 <input
                   aria-label={field.label}

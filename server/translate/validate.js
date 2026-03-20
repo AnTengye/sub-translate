@@ -1,7 +1,14 @@
 const providerOptionAllowlist = {
   'claude-compatible': new Set(['model']),
   'openai-compatible': new Set(['model', 'temperature']),
-  baidu: new Set(['modelType', 'reference', 'needIntervene', 'tagHandling', 'ignoreTags']),
+  baidu: new Set([
+    'modelType',
+    'reference',
+    'needIntervene',
+    'tagHandling',
+    'ignoreTags',
+    'punctuationPreprocessing',
+  ]),
 };
 
 function isStringArray(value) {

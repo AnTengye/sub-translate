@@ -40,6 +40,27 @@ describe('SubtitleTranslatorPage', () => {
     expect(screen.queryByLabelText(/API 端点/i)).not.toBeInTheDocument();
   });
 
+  it('shows the Baidu punctuation preprocessing toggle and keeps it off by default', async () => {
+    render(<SubtitleTranslatorPage />);
+
+    const input = screen.getByLabelText(/选择文件/i);
+    const file = new File(
+      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
+      'sample.srt',
+      { type: 'text/plain' },
+    );
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    fireEvent.click(await screen.findByRole('button', { name: /百度大模型翻译 api/i }));
+
+    const toggle = await screen.findByLabelText(/标点预处理（实验性）/i);
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+  });
+
   it('imports subtitle files through drag and drop', async () => {
     render(<SubtitleTranslatorPage />);
 

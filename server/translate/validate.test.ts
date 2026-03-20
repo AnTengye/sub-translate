@@ -80,4 +80,25 @@ describe('validateTranslateRequest', () => {
       }),
     ).toThrow('批次元信息格式无效');
   });
+
+  it('allows the optional Baidu punctuation preprocessing flag', () => {
+    expect(
+      validateTranslateRequest('baidu', {
+        texts: ['こんにちは'],
+        options: {
+          modelType: 'llm',
+          punctuationPreprocessing: 'true',
+        },
+      }),
+    ).toEqual({
+      runId: undefined,
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: undefined,
+      options: {
+        modelType: 'llm',
+        punctuationPreprocessing: 'true',
+      },
+    });
+  });
 });

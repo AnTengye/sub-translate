@@ -223,6 +223,107 @@ describe('server provider adapters', () => {
     );
   });
 
+  it('realigns split Baidu response items back to the original subtitle entries', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          trans_result: [
+            { src: 'うん。', dst: '嗯。' },
+            { src: 'だから、ママに先にやっといてほしいなと思って。', dst: '所以，我想让妈妈先帮我做一下。' },
+            { src: 'うーん。', dst: '嗯。' },
+            { src: '考えとく。', dst: '我考虑一下。' },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      dispatchServerTranslate(
+        'baidu',
+        {
+          texts: ['うん。だから、ママに先にやっといてほしいなと思って。', 'うーん。考えとく。'],
+          contextTexts: [],
+          options: {
+            modelType: 'llm',
+          },
+        },
+        new AbortController().signal,
+        {
+          fetchImpl,
+          env: {
+            BAIDU_API_KEY: 'baidu-key',
+            BAIDU_APP_ID: 'baidu-app',
+            BAIDU_API_ENDPOINT: 'https://baidu-proxy.example/translate',
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      translations: ['嗯。所以，我想让妈妈先帮我做一下。', '嗯。我考虑一下。'],
+      debug: {
+        request: {
+          payload: {
+            q: 'うん。だから、ママに先にやっといてほしいなと思って。\nうーん。考えとく。',
+          },
+        },
+      },
+    });
+  });
+
+  it('optionally preprocesses punctuation for Baidu requests and restores it after translation', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          trans_result: [
+            {
+              src: 'おかえり__SRT_PUNC_STOP__また来たの__SRT_PUNC_QUESTION__',
+              dst: '你回来了__SRT_PUNC_STOP__又来了吗__SRT_PUNC_QUESTION__',
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      dispatchServerTranslate(
+        'baidu',
+        {
+          texts: ['おかえり。また来たの?'],
+          contextTexts: [],
+          options: {
+            modelType: 'llm',
+            punctuationPreprocessing: 'true',
+          },
+        },
+        new AbortController().signal,
+        {
+          fetchImpl,
+          env: {
+            BAIDU_API_KEY: 'baidu-key',
+            BAIDU_APP_ID: 'baidu-app',
+            BAIDU_API_ENDPOINT: 'https://baidu-proxy.example/translate',
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      translations: ['你回来了。又来了吗?'],
+      debug: {
+        request: {
+          payload: {
+            q: 'おかえり__SRT_PUNC_STOP__また来たの__SRT_PUNC_QUESTION__',
+          },
+        },
+      },
+    });
+  });
+
   it('falls back to Baidu sign auth when API key is unavailable', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(

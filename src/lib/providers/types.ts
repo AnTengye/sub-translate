@@ -1,4 +1,4 @@
-export type ProviderFieldType = 'text' | 'password' | 'select';
+export type ProviderFieldType = 'text' | 'password' | 'select' | 'checkbox';
 
 export interface ProviderFieldDefinition {
   key: string;
