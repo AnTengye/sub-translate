@@ -28,16 +28,26 @@ export function ProviderPanel({
 
   return (
     <aside className="sidebar">
-      <section className="panel-card">
-        <div className="section-title">文件信息</div>
+      <section className="panel-card panel-card-emphasis">
+        <div className="section-heading">
+          <div>
+            <div className="section-kicker">Workspace</div>
+            <div className="section-title">文件信息</div>
+          </div>
+        </div>
         <div className="file-meta">
           <strong>{state.fileName}</strong>
-          <span>{state.entries.length} 条字幕</span>
+          <span>{state.entries.length} 条字幕待处理</span>
         </div>
       </section>
 
       <section className="panel-card">
-        <div className="section-title">翻译引擎</div>
+        <div className="section-heading">
+          <div>
+            <div className="section-kicker">Provider</div>
+            <div className="section-title">翻译引擎</div>
+          </div>
+        </div>
         <div className="provider-grid">
           {providerDefinitions.map((provider) => (
             <button
@@ -49,8 +59,15 @@ export function ProviderPanel({
                 dispatch({ type: 'setProvider', provider: provider.id as ProviderId })
               }
             >
-              <span className="provider-icon">{provider.icon}</span>
-              <span>{provider.label}</span>
+              <span
+                className="provider-swatch"
+                style={{ backgroundColor: provider.color }}
+                aria-hidden="true"
+              />
+              <span className="provider-copy">
+                <strong>{provider.label}</strong>
+                <span>{provider.id.toUpperCase()}</span>
+              </span>
             </button>
           ))}
         </div>
@@ -101,7 +118,12 @@ export function ProviderPanel({
       </section>
 
       <section className="panel-card">
-        <div className="section-title">翻译参数</div>
+        <div className="section-heading">
+          <div>
+            <div className="section-kicker">Tuning</div>
+            <div className="section-title">翻译参数</div>
+          </div>
+        </div>
         <label className="field">
           <span>每批字幕数量</span>
           <input
@@ -119,7 +141,7 @@ export function ProviderPanel({
               })
             }
           />
-          <strong>{state.translationConfig.batchSize}</strong>
+          <strong className="field-value">{state.translationConfig.batchSize}</strong>
         </label>
 
         <label className="field">
@@ -139,7 +161,7 @@ export function ProviderPanel({
               })
             }
           />
-          <strong>{state.translationConfig.contextLines}</strong>
+          <strong className="field-value">{state.translationConfig.contextLines}</strong>
         </label>
 
         {state.provider !== 'baidu' ? (
@@ -160,13 +182,18 @@ export function ProviderPanel({
                 })
               }
             />
-            <strong>{state.translationConfig.temperature.toFixed(2)}</strong>
+            <strong className="field-value">{state.translationConfig.temperature.toFixed(2)}</strong>
           </label>
         ) : null}
       </section>
 
       <section className="panel-card">
-        <div className="section-title">操作</div>
+        <div className="section-heading">
+          <div>
+            <div className="section-kicker">Actions</div>
+            <div className="section-title">操作</div>
+          </div>
+        </div>
         <div className="button-stack">
           {state.step === 'config' ? (
             <button className="primary-button" type="button" onClick={onStart}>
@@ -187,7 +214,12 @@ export function ProviderPanel({
       </section>
 
       <section className="panel-card">
-        <div className="section-title">日志</div>
+        <div className="section-heading">
+          <div>
+            <div className="section-kicker">Activity</div>
+            <div className="section-title">日志</div>
+          </div>
+        </div>
         <div className="log-list">
           {state.logs.length === 0 ? (
             <span className="muted-text">暂无日志</span>

@@ -16,9 +16,18 @@ export function UploadScreen({ error, onFileSelected }: UploadScreenProps) {
 
   return (
     <main className="upload-screen">
-      <p className="eyebrow">日→中 字幕翻译工具</p>
-      <h1>上传字幕，一键翻译</h1>
-      <p className="lead">支持多引擎、批量翻译、失败重试，适合私人部署自用。</p>
+      <section className="upload-hero">
+        <p className="eyebrow">SRT Translate Workspace</p>
+        <h1>上传字幕，生成可导出的中文字幕</h1>
+        <p className="lead">
+          面向桌面效率的私有翻译工作区，适合在本机、NAS 或内网环境中快速完成字幕处理。
+        </p>
+        <div className="upload-feature-list" aria-label="上传页功能亮点">
+          <span className="feature-pill">拖放上传</span>
+          <span className="feature-pill">多引擎切换</span>
+          <span className="feature-pill">失败可重试</span>
+        </div>
+      </section>
 
       <label
         className={`upload-card${isDragging ? ' drag-active' : ''}`}
@@ -45,10 +54,11 @@ export function UploadScreen({ error, onFileSelected }: UploadScreenProps) {
           void onFileSelected(file);
         }}
       >
-        <span className="upload-card-title">选择字幕文件</span>
+        <span className="upload-card-title">导入字幕文件</span>
         <span className="upload-card-hint">
-          {isDragging ? '松手即可开始导入字幕' : '支持 .srt / .vtt / .sub，或直接拖拽到这里'}
+          {isDragging ? '松手即可开始导入字幕' : '支持 .srt / .vtt / .sub，点击选择或直接拖拽到这里'}
         </span>
+        <span className="upload-card-note">导入后即可进入桌面工作区，继续配置引擎与翻译参数。</span>
         <input
           id="subtitle-file-input"
           aria-label="选择文件"

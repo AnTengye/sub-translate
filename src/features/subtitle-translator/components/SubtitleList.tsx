@@ -7,6 +7,19 @@ interface SubtitleListProps {
 }
 
 export function SubtitleList({ entries, canRetry, onRetrySingle }: SubtitleListProps) {
+  function getStatusLabel(status: SubtitleEntry['status']) {
+    switch (status) {
+      case 'done':
+        return '已完成';
+      case 'error':
+        return '失败';
+      case 'retrying':
+        return '重试中';
+      default:
+        return '待翻译';
+    }
+  }
+
   if (entries.length === 0) {
     return <div className="empty-state">当前筛选条件下没有条目。</div>;
   }
@@ -16,16 +29,18 @@ export function SubtitleList({ entries, canRetry, onRetrySingle }: SubtitleListP
       {entries.map((entry) => (
         <article key={`${entry.idx}-${entry.timecode}`} className={`subtitle-card status-${entry.status}`}>
           <div className="subtitle-topline">
-            <span className="chip">#{entry.idx}</span>
+            <span className="chip chip-index">#{entry.idx}</span>
             <span className="timecode">{entry.timecode}</span>
-            <span className="chip">{entry.status}</span>
+            <span className={`chip chip-status status-pill-${entry.status}`}>
+              {getStatusLabel(entry.status)}
+            </span>
           </div>
           <div className="subtitle-columns">
-            <div>
+            <div className="subtitle-column">
               <h3>原文</h3>
               <p>{entry.text}</p>
             </div>
-            <div>
+            <div className="subtitle-column subtitle-column-translation">
               <h3>译文</h3>
               <p>
                 {entry.status === 'retrying'
