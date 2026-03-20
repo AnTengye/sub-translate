@@ -28,13 +28,18 @@ export function useTranslationController(
   }, [state.display]);
 
   const providerRuntimeConfig = useMemo(
-    () => ({
-      ...Object.fromEntries(
+    () => {
+      const config = Object.fromEntries(
         Object.entries(state.providerConfig).filter(([, value]) => value !== ''),
-      ),
-      temperature: String(state.translationConfig.temperature),
-    }),
-    [state.providerConfig, state.translationConfig.temperature],
+      ) as Record<string, string>;
+
+      if (state.provider === 'openai' || state.provider === 'qwen') {
+        config.temperature = String(state.translationConfig.temperature);
+      }
+
+      return config;
+    },
+    [state.provider, state.providerConfig, state.translationConfig.temperature],
   );
 
   function appendLog(message: string) {

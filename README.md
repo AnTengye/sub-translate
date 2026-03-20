@@ -1,71 +1,60 @@
 # SRT Translate
 
-基于 `Vite + React + TypeScript` 的日语字幕翻译工具，适合私人部署和个人自用。支持上传字幕文件、选择翻译引擎、批量翻译、失败重试，以及导出中文字幕 `SRT`。
+基于 `Vite + React + TypeScript + Node` 的日语字幕翻译工具，适合本机、NAS 或内网环境自用。当前版本通过本地代理服务统一转发各家翻译请求，浏览器不再直接持有第三方密钥。
 
 ## 功能
 
-- 支持 `.srt` 字幕解析和导出
-- 支持 `Claude`、`OpenAI 兼容接口`、`Qwen`、`百度翻译`
-- 支持批量翻译和前文上下文携带
-- 支持单条重试和批量重试失败条目
+- 支持 `.srt` 字幕解析、预览和导出
+- 支持点击上传和拖拽上传字幕文件
+- 支持 `Claude`、`OpenAI 兼容接口`、`Qwen`、`百度大模型翻译`
+- 支持批量翻译、失败重试、单条重试
 - 支持本地开发和 Docker 私有部署
 
-## 适用场景
+## 架构说明
 
-这个项目定位是私人部署、自用工具。
+项目现在是单服务架构：
 
-- 适合：本机、NAS、内网服务器、自用 VPS
-- 不适合：直接暴露公网给不受信任用户使用
+- 前端页面负责字幕上传、配置和进度展示
+- 本地 Node 服务负责：
+  - 提供前端页面
+  - 代理 `/api/translate/:provider`
+  - 读取服务端环境变量中的密钥
 
-原因很直接：这是纯前端项目，浏览器会直接请求第三方翻译 API。即使你把默认配置写进环境变量，最终也会被打包进前端资源，不适合公开多用户场景。
+这样做的直接收益是：
+
+- 浏览器不需要再处理 CORS
+- `API Key / Secret / AppID` 不再出现在前端表单里
+- 百度翻译可以按最新大模型文本翻译接口接入
 
 ## 本地开发
+
+1. 复制 `.env.example` 为 `.env`
+2. 至少填写你要使用的 provider 对应服务端密钥
+3. 启动开发服务：
 
 ```bash
 npm install
 npm run dev
 ```
 
-默认开发地址通常是：
+默认地址：
 
 ```text
-http://localhost:5173
+http://localhost:3000
 ```
 
-## 测试与构建
+开发模式下由同一个 Node 服务承载前端和 `/api` 代理。
+
+## 生产运行
+
+先构建，再启动：
 
 ```bash
-npm run test
 npm run build
+npm run start
 ```
-
-## 环境变量
-
-复制 `.env.example` 为 `.env` 后按需修改：
-
-```env
-VITE_APP_TITLE=SRT Translate
-VITE_DEFAULT_PROVIDER=claude
-VITE_CLAUDE_MODEL=claude-3-5-sonnet-latest
-VITE_OPENAI_ENDPOINT=https://api.openai.com/v1
-VITE_OPENAI_MODEL=gpt-4o-mini
-VITE_QWEN_MODEL=qwen-mt-turbo
-```
-
-说明：
-
-- `VITE_APP_TITLE`：页面标题
-- `VITE_DEFAULT_PROVIDER`：默认选中的翻译引擎
-- `VITE_CLAUDE_MODEL`：Claude 默认模型
-- `VITE_OPENAI_ENDPOINT`：OpenAI 兼容接口默认地址
-- `VITE_OPENAI_MODEL`：OpenAI 兼容接口默认模型
-- `VITE_QWEN_MODEL`：Qwen 默认模型
-
-这些变量只用于提供默认值，不会替代运行时手动输入的 API Key。
 
 ## Docker 部署
-
-构建并启动：
 
 ```bash
 docker compose up --build -d
@@ -83,7 +72,62 @@ http://localhost:8080
 docker compose down
 ```
 
-如果你需要自定义默认 provider 或模型，可以在运行 `docker compose up --build` 前设置对应环境变量，Compose 会把它们作为 build args 传给前端构建阶段。
+## 环境变量
+
+### 前端默认值
+
+这些变量只用于提供前端默认模型或默认端点：
+
+```env
+VITE_APP_TITLE=SRT Translate
+VITE_DEFAULT_PROVIDER=claude
+VITE_CLAUDE_MODEL=claude-3-5-sonnet-latest
+VITE_OPENAI_ENDPOINT=https://api.openai.com/v1
+VITE_OPENAI_MODEL=gpt-4o-mini
+VITE_QWEN_MODEL=qwen-mt-turbo
+```
+
+### 服务端密钥
+
+这些变量由本地代理服务读取，不会再显示在前端表单里：
+
+```env
+CLAUDE_API_KEY=
+OPENAI_API_KEY=
+QWEN_API_KEY=
+BAIDU_APP_ID=
+BAIDU_API_KEY=
+BAIDU_SECRET_KEY=
+```
+
+说明：
+
+- `CLAUDE_API_KEY`：Claude 服务端密钥
+- `OPENAI_API_KEY`：OpenAI / OpenAI 兼容接口服务端密钥
+- `QWEN_API_KEY`：阿里云百炼服务端密钥
+- `BAIDU_APP_ID`：百度翻译 APPID
+- `BAIDU_API_KEY`：百度大模型文本翻译推荐鉴权方式
+- `BAIDU_SECRET_KEY`：百度 `sign` 鉴权回退方式，只有在未配置 `BAIDU_API_KEY` 时才会使用
+
+## 百度翻译接入说明
+
+百度当前接入按“大模型文本翻译 API”处理：
+
+- 地址：`https://fanyi-api.baidu.com/ait/api/aiTextTranslate`
+- 默认鉴权：`Authorization: Bearer YOUR_API_KEY`
+- 回退鉴权：`appid + q + salt + secretKey` 的 `MD5 sign`
+
+前端只保留非敏感选项，例如：
+
+- `modelType`：`llm` 或 `nmt`
+- `reference`：翻译指令
+
+## 测试与构建
+
+```bash
+npm test
+npm run build
+```
 
 ## 项目结构
 
@@ -91,23 +135,8 @@ docker compose down
 src/
   features/subtitle-translator/   # 页面、组件、hooks、状态管理
   lib/subtitle/                   # SRT 解析与导出
-  lib/providers/                  # provider 元数据、适配器、响应解析
-  lib/config/                     # 环境变量读取
+  lib/providers/                  # provider 元数据与前端代理适配
+server/
+  providers/                     # 服务端 provider 适配器
+  translate/                     # 服务端请求验证
 ```
-
-## Provider 说明
-
-- `Claude`：需要填写 Anthropic API Key
-- `OpenAI / 兼容接口`：适用于 OpenAI、DeepSeek、Moonshot、OpenRouter 等兼容接口
-- `Qwen`：走阿里云百炼兼容接口
-- `百度翻译`：需要 `APP ID` 和 `密钥`
-
-## 如何新增一个 Provider
-
-如果你以后要继续加新引擎，最少只需要动这几处：
-
-1. 在 `src/lib/providers/adapters/` 下新增适配器文件
-2. 在 `src/lib/providers/definitions.ts` 添加表单元数据和默认值
-3. 在 `src/lib/providers/registry.ts` 注册分发逻辑
-
-项目没有做运行时插件系统，故意保持简单，方便私人维护。
