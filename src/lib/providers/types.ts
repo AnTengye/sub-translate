@@ -6,6 +6,7 @@ export interface ProviderFieldDefinition {
   type: ProviderFieldType;
   placeholder?: string;
   options?: string[];
+  description?: string;
 }
 
 export interface ProviderDefinition {

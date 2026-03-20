@@ -55,6 +55,8 @@ describe('SubtitleTranslatorPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /百度大模型翻译 api/i }));
 
     const toggle = await screen.findByLabelText(/标点预处理（实验性）/i);
+    expect(toggle.closest('.field-toggle')).not.toBeNull();
+    expect(screen.getByText(/减少模型按句拆分导致的错位风险/i)).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);

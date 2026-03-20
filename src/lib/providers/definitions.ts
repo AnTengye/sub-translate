@@ -44,7 +44,12 @@ export const providerDefinitions: ProviderDefinition[] = [
         options: ['llm', 'nmt'],
       },
       { key: 'reference', label: '翻译指令', type: 'text', placeholder: '例如：保持口语自然' },
-      { key: 'punctuationPreprocessing', label: '标点预处理（实验性）', type: 'checkbox' },
+      {
+        key: 'punctuationPreprocessing',
+        label: '标点预处理（实验性）',
+        type: 'checkbox',
+        description: '减少模型按句拆分导致的错位风险',
+      },
     ],
     defaults: {
       modelType: 'llm',

@@ -76,9 +76,13 @@ export function ProviderPanel({
 
         <div className="field-stack">
           {activeProvider.fields.map((field) => (
-            <label key={field.key} className="field">
-              <span>{field.label}</span>
+            <label
+              key={field.key}
+              className={field.type === 'checkbox' ? 'field field-toggle' : 'field'}
+            >
               {field.type === 'select' ? (
+                <>
+                  <span>{field.label}</span>
                 <select
                   value={state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? ''}
                   disabled={disableInputs}
@@ -96,35 +100,53 @@ export function ProviderPanel({
                     </option>
                   ))}
                 </select>
+                </>
               ) : field.type === 'checkbox' ? (
-                <input
-                  aria-label={field.label}
-                  type="checkbox"
-                  checked={(state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'}
-                  disabled={disableInputs}
-                  onChange={(event) =>
-                    dispatch({
-                      type: 'updateProviderConfig',
-                      key: field.key,
-                      value: event.target.checked ? 'true' : '',
-                    })
-                  }
-                />
+                <>
+                  <div className="toggle-copy">
+                    <span className="toggle-title">{field.label}</span>
+                    {field.description ? <span className="toggle-note">{field.description}</span> : null}
+                  </div>
+                  <span className="toggle-control">
+                    <input
+                      aria-label={field.label}
+                      className="sr-only-input"
+                      type="checkbox"
+                      checked={
+                        (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
+                      }
+                      disabled={disableInputs}
+                      onChange={(event) =>
+                        dispatch({
+                          type: 'updateProviderConfig',
+                          key: field.key,
+                          value: event.target.checked ? 'true' : '',
+                        })
+                      }
+                    />
+                    <span className="toggle-switch" aria-hidden="true">
+                      <span className="toggle-knob" />
+                    </span>
+                  </span>
+                </>
               ) : (
-                <input
-                  aria-label={field.label}
-                  type={field.type}
-                  placeholder={field.placeholder}
-                  value={state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? ''}
-                  disabled={disableInputs}
-                  onChange={(event) =>
-                    dispatch({
-                      type: 'updateProviderConfig',
-                      key: field.key,
-                      value: event.target.value,
-                    })
-                  }
-                />
+                <>
+                  <span>{field.label}</span>
+                  <input
+                    aria-label={field.label}
+                    type={field.type}
+                    placeholder={field.placeholder}
+                    value={state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? ''}
+                    disabled={disableInputs}
+                    onChange={(event) =>
+                      dispatch({
+                        type: 'updateProviderConfig',
+                        key: field.key,
+                        value: event.target.value,
+                      })
+                    }
+                  />
+                </>
               )}
             </label>
           ))}
