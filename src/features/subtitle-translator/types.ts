@@ -5,6 +5,7 @@ export interface TranslationConfig {
   batchSize: number;
   contextLines: number;
   temperature: number;
+  maxTokens?: number;
 }
 
 export interface TranslationLogEntry {

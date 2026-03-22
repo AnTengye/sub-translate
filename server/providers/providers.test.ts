@@ -51,6 +51,8 @@ describe('server provider adapters', () => {
           payload: {
             model: 'gpt-4o-mini',
             temperature: 0.2,
+            max_tokens: 4096,
+            stop: ['<|endoftext|>', '<|im_start|>'],
             messages: [
               expect.objectContaining({ role: 'system' }),
               expect.objectContaining({ role: 'user' }),

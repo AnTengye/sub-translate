@@ -19,11 +19,53 @@ function buildTranslationMessages(texts, contextTexts) {
 }
 
 function parseTranslationResponse(text, count) {
-  try {
-    return JSON.parse(text).slice(0, count).map(String);
-  } catch {
-    return Array(count).fill('[翻译失败]');
+  // Step 1: Truncate at first special token (in case Ollama routed here by mistake)
+  const stopPatterns = ['<|endoftext|>', '<|im_start|>', '<|im_end|>'];
+  let cleaned = text;
+  for (const pat of stopPatterns) {
+    const idx = cleaned.indexOf(pat);
+    if (idx !== -1) cleaned = cleaned.substring(0, idx);
   }
+
+  // Step 2: Remove <think>...</think> blocks
+  cleaned = cleaned.replace(/<think>[\s\S]*?<\/think>/g, '');
+
+  // Step 3: Strip markdown code fences
+  cleaned = cleaned.replace(/^```(?:json)?\n?/gm, '').replace(/\n?```$/gm, '').trim();
+
+  // Step 4: Try direct JSON parse
+  try {
+    const parsed = JSON.parse(cleaned);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      return parsed.slice(0, count).map(String);
+    }
+  } catch {
+    // fall through to embedded array extraction
+  }
+
+  // Step 5: Find first valid JSON array via bracket matching
+  const startIdx = cleaned.indexOf('[');
+  if (startIdx !== -1) {
+    let depth = 0;
+    for (let i = startIdx; i < cleaned.length; i++) {
+      if (cleaned[i] === '[') depth++;
+      else if (cleaned[i] === ']') depth--;
+      if (depth === 0) {
+        try {
+          const candidate = cleaned.substring(startIdx, i + 1);
+          const parsed = JSON.parse(candidate);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed.slice(0, count).map(String);
+          }
+        } catch {
+          // continue to fallback
+        }
+        break;
+      }
+    }
+  }
+
+  return Array(count).fill('[翻译失败]');
 }
 
 export async function translateWithClaude(request, signal, deps = {}) {
