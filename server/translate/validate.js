@@ -1,6 +1,6 @@
 const providerOptionAllowlist = {
   'claude-compatible': new Set(['model']),
-  'openai-compatible': new Set(['model', 'temperature', 'maxTokens']),
+  'openai-compatible': new Set(['model', 'temperature', 'maxTokens', 'disableThinking']),
   baidu: new Set([
     'modelType',
     'reference',

@@ -4,6 +4,7 @@ import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { extname, join, normalize } from 'node:path';
 import { createTranslationRunLogger } from './logging/translation-run-logger.js';
+import { isFailureTranslation, normalizeTranslationItems } from './providers/response.js';
 import { dispatchServerTranslate } from './providers/index.js';
 import { validateTranslateRequest } from './translate/validate.js';
 
@@ -135,7 +136,7 @@ function normalizeTranslateResult(result) {
   }
 
   return {
-    translations: result.translations.map(String),
+    translations: normalizeTranslationItems(result.translations, result.translations.length),
     debug: isObject(result.debug) ? result.debug : {},
   };
 }
@@ -236,7 +237,7 @@ export function createAppHandler(options = {}) {
                 timecode: runEntryList[validated.batch.startIndex + index]?.timecode ?? null,
                 sourceText: text,
                 translatedText: result.translations[index] ?? '[翻译失败]',
-                status: result.translations[index] ? 'done' : 'error',
+                status: isFailureTranslation(result.translations[index]) ? 'error' : 'done',
               })),
               debug: result.debug,
             });

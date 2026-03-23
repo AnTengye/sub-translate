@@ -77,6 +77,225 @@ describe('server provider adapters', () => {
     );
   });
 
+  it('normalizes object-array translations from OpenAI-compatible local models', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify([
+                  { 中文文本: '你确定吗？' },
+                  { translatedText: '虽然有年龄差' },
+                ]),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      dispatchServerTranslate(
+        'openai-compatible',
+        {
+          texts: ['本当ですか?', '年の差はありますけども'],
+          contextTexts: [],
+          options: {
+            model: 'local-sakura',
+          },
+        },
+        new AbortController().signal,
+        {
+          fetchImpl,
+          env: {
+            OPENAI_API_KEY: 'sk-server',
+            OPENAI_API_ENDPOINT: 'http://127.0.0.1:11434/v1',
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      translations: ['你确定吗？', '虽然有年龄差'],
+      debug: {
+        request: {
+          endpoint: 'http://127.0.0.1:11434/v1/chat/completions',
+        },
+      },
+    });
+  });
+
+  it('disables thinking for Qwen-compatible models using fuzzy model matching', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '["你好"]' } }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await dispatchServerTranslate(
+      'openai-compatible',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {
+          model: 'Qwen/QwQ-32B',
+          disableThinking: 'true',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        env: {
+          OPENAI_API_KEY: 'sk-server',
+          OPENAI_API_ENDPOINT: 'https://openrouter.example/api/v1',
+        },
+      },
+    );
+
+    const [, requestInit] = fetchImpl.mock.calls[0];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'Qwen/QwQ-32B',
+      enable_thinking: false,
+    });
+  });
+
+  it('disables thinking for DeepSeek-compatible models using fuzzy model matching', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '["你好"]' } }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await dispatchServerTranslate(
+      'openai-compatible',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {
+          model: 'deepseek-r1-distill-qwen-32b',
+          disableThinking: 'true',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        env: {
+          OPENAI_API_KEY: 'sk-server',
+          OPENAI_API_ENDPOINT: 'https://openrouter.example/api/v1',
+        },
+      },
+    );
+
+    const [, requestInit] = fetchImpl.mock.calls[0];
+    expect(JSON.parse(String(requestInit.body))).toMatchObject({
+      model: 'deepseek-r1-distill-qwen-32b',
+      thinking: {
+        type: 'disabled',
+      },
+    });
+  });
+
+  it('ignores the disable thinking toggle for unrecognized models', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '["你好"]' } }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await dispatchServerTranslate(
+      'openai-compatible',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {
+          model: 'gpt-4o-mini',
+          disableThinking: 'true',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        env: {
+          OPENAI_API_KEY: 'sk-server',
+          OPENAI_API_ENDPOINT: 'https://openrouter.example/api/v1',
+        },
+      },
+    );
+
+    const [, requestInit] = fetchImpl.mock.calls[0];
+    const payload = JSON.parse(String(requestInit.body));
+    expect(payload).not.toHaveProperty('enable_thinking');
+    expect(payload).not.toHaveProperty('thinking');
+  });
+
+  it('extracts numbered translations wrapped inside a single object item', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify([
+                  {
+                    中文文本: '【待翻译字幕】\n1. 你确定吗？\n2. 虽然有年龄差',
+                  },
+                ]),
+              },
+            },
+          ],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await expect(
+      dispatchServerTranslate(
+        'openai-compatible',
+        {
+          texts: ['本当ですか?', '年の差はありますけども'],
+          contextTexts: [],
+          options: {
+            model: 'local-sakura',
+          },
+        },
+        new AbortController().signal,
+        {
+          fetchImpl,
+          env: {
+            OPENAI_API_KEY: 'sk-server',
+            OPENAI_API_ENDPOINT: 'http://127.0.0.1:11434/v1',
+          },
+        },
+      ),
+    ).resolves.toMatchObject({
+      translations: ['你确定吗？', '虽然有年龄差'],
+    });
+  });
+
   it('uses server-side Claude-compatible credentials and endpoint', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(

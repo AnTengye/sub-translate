@@ -10,9 +10,16 @@ export const providerDefinitions: ProviderDefinition[] = [
     desc: '适用于 OpenAI、Qwen、DeepSeek、Moonshot、OpenRouter 等兼容 /chat/completions 的服务',
     fields: [
       { key: 'model', label: '模型名称', type: 'text', placeholder: 'gpt-4o-mini' },
+      {
+        key: 'disableThinking',
+        label: '关闭 Thinking',
+        type: 'checkbox',
+        description: '对已适配的推理模型显式关闭 thinking 模式',
+      },
     ],
     defaults: {
       model: appEnv.openAiModel,
+      disableThinking: '',
     } as Record<string, string>,
     corsNote: '请求地址与 API Key 由服务端环境变量统一提供，前端只配置模型和温度',
   },

@@ -3,6 +3,7 @@ import type {
   TranslationBatchMetadata,
   TranslationRunCreatePayload,
 } from '../types';
+import { normalizeTranslationItems } from '../response';
 
 interface TranslationRunFinalizePayload {
   status: 'completed' | 'failed' | 'cancelled';
@@ -104,5 +105,5 @@ export async function translateViaProxy(
     throw new Error('代理返回格式无效');
   }
 
-  return data.translations.map(String);
+  return normalizeTranslationItems(data.translations, texts.length);
 }

@@ -1,5 +1,5 @@
 const FAILURE_PLACEHOLDER = '[翻译失败]';
-const ARRAY_CONTAINER_KEYS = ['translations', 'results', 'data', 'items'] as const;
+const ARRAY_CONTAINER_KEYS = ['translations', 'results', 'data', 'items'];
 const TEXT_VALUE_KEYS = [
   'translatedText',
   'translation',
@@ -15,20 +15,18 @@ const TEXT_VALUE_KEYS = [
   'targetText',
   'target',
   'dst',
-] as const;
+];
 
-function isObject(value: unknown): value is Record<string, unknown> {
+function isObject(value) {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
 }
 
-function stripResponseArtifacts(text: string): string {
+function stripResponseArtifacts(text) {
   const stopPatterns = ['<|endoftext|>', '<|im_start|>', '<|im_end|>'];
   let cleaned = text;
-  for (const pattern of stopPatterns) {
-    const index = cleaned.indexOf(pattern);
-    if (index !== -1) {
-      cleaned = cleaned.substring(0, index);
-    }
+  for (const pat of stopPatterns) {
+    const idx = cleaned.indexOf(pat);
+    if (idx !== -1) cleaned = cleaned.substring(0, idx);
   }
 
   return cleaned
@@ -38,7 +36,7 @@ function stripResponseArtifacts(text: string): string {
     .trim();
 }
 
-function extractTextValue(value: unknown, depth = 0): string | null {
+function extractTextValue(value, depth = 0) {
   if (typeof value === 'string') {
     const trimmed = value.trim();
     return trimmed === '' ? null : trimmed;
@@ -69,7 +67,7 @@ function extractTextValue(value: unknown, depth = 0): string | null {
   return null;
 }
 
-function splitStructuredTranslationBlock(text: string, count: number): string[] | null {
+function splitStructuredTranslationBlock(text, count) {
   const lines = text
     .split('\n')
     .map((line) => line.trim())
@@ -77,7 +75,7 @@ function splitStructuredTranslationBlock(text: string, count: number): string[] 
 
   const numberedLines = lines
     .map((line) => line.match(/^\d+[.。、:：]\s*(.+)$/)?.[1]?.trim() ?? null)
-    .filter((line): line is string => Boolean(line));
+    .filter(Boolean);
 
   if (numberedLines.length >= count) {
     return numberedLines.slice(0, count);
@@ -91,29 +89,7 @@ function splitStructuredTranslationBlock(text: string, count: number): string[] 
   return null;
 }
 
-function extractTranslationsPayload(parsed: unknown): unknown[] | null {
-  if (Array.isArray(parsed)) {
-    return parsed;
-  }
-
-  if (isObject(parsed)) {
-    for (const key of ARRAY_CONTAINER_KEYS) {
-      const value = parsed[key];
-      if (Array.isArray(value)) {
-        return value;
-      }
-    }
-
-    const singleValue = extractTextValue(parsed);
-    if (singleValue) {
-      return [singleValue];
-    }
-  }
-
-  return null;
-}
-
-export function normalizeTranslationItems(values: unknown, count: number): string[] {
+export function normalizeTranslationItems(values, count) {
   if (!Array.isArray(values)) {
     return Array(count).fill(FAILURE_PLACEHOLDER);
   }
@@ -139,11 +115,33 @@ export function normalizeTranslationItems(values: unknown, count: number): strin
       return String(candidate);
     }
 
-    return extractTextValue(candidate) ?? FAILURE_PLACEHOLDER;
+    const extracted = extractTextValue(candidate);
+    return extracted ?? FAILURE_PLACEHOLDER;
   });
 }
 
-export function parseTranslationResponse(text: string, count: number): string[] {
+function extractTranslationsPayload(parsed) {
+  if (Array.isArray(parsed)) {
+    return parsed;
+  }
+
+  if (isObject(parsed)) {
+    for (const key of ARRAY_CONTAINER_KEYS) {
+      if (Array.isArray(parsed[key])) {
+        return parsed[key];
+      }
+    }
+
+    const singleValue = extractTextValue(parsed);
+    if (singleValue) {
+      return [singleValue];
+    }
+  }
+
+  return null;
+}
+
+export function parseTranslationResponse(text, count) {
   const cleaned = stripResponseArtifacts(text);
 
   try {
@@ -158,10 +156,7 @@ export function parseTranslationResponse(text: string, count: number): string[] 
   const embeddedArrayMatch = cleaned.match(/\[[\s\S]*\]/);
   if (embeddedArrayMatch) {
     try {
-      const normalized = normalizeTranslationItems(
-        extractTranslationsPayload(JSON.parse(embeddedArrayMatch[0])),
-        count,
-      );
+      const normalized = normalizeTranslationItems(extractTranslationsPayload(JSON.parse(embeddedArrayMatch[0])), count);
       if (normalized.some((item) => item !== FAILURE_PLACEHOLDER)) {
         return normalized;
       }
@@ -182,6 +177,6 @@ export function parseTranslationResponse(text: string, count: number): string[] 
   return Array(count).fill(FAILURE_PLACEHOLDER);
 }
 
-export function isFailureTranslation(text: string | null | undefined): boolean {
+export function isFailureTranslation(text) {
   return !text || text === FAILURE_PLACEHOLDER;
 }

@@ -51,6 +51,7 @@ describe('provider registry', () => {
         {
           model: 'gpt-4o-mini',
           temperature: '0.2',
+          disableThinking: 'true',
         },
         new AbortController().signal,
       ),
@@ -77,6 +78,7 @@ describe('provider registry', () => {
           options: {
             model: 'gpt-4o-mini',
             temperature: '0.2',
+            disableThinking: 'true',
           },
         }),
       }),

@@ -101,4 +101,25 @@ describe('validateTranslateRequest', () => {
       },
     });
   });
+
+  it('allows the optional OpenAI disable thinking flag', () => {
+    expect(
+      validateTranslateRequest('openai-compatible', {
+        texts: ['こんにちは'],
+        options: {
+          model: 'qwen-turbo',
+          disableThinking: 'true',
+        },
+      }),
+    ).toEqual({
+      runId: undefined,
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: undefined,
+      options: {
+        model: 'qwen-turbo',
+        disableThinking: 'true',
+      },
+    });
+  });
 });
