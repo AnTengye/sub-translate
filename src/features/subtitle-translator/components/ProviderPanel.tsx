@@ -78,7 +78,7 @@ export function ProviderPanel({
           {activeProvider.fields.map((field) => (
             <label
               key={field.key}
-              className={field.type === 'checkbox' ? 'field field-toggle' : 'field'}
+              className={field.type === 'checkbox' ? 'field field-checkbox' : 'field'}
             >
               {field.type === 'select' ? (
                 <>
@@ -103,31 +103,28 @@ export function ProviderPanel({
                 </>
               ) : field.type === 'checkbox' ? (
                 <>
-                  <div className="toggle-copy">
-                    <span className="toggle-title">{field.label}</span>
-                    {field.description ? <span className="toggle-note">{field.description}</span> : null}
+                  <input
+                    aria-label={field.label}
+                    className="field-checkbox-input"
+                    type="checkbox"
+                    checked={
+                      (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) =>
+                      dispatch({
+                        type: 'updateProviderConfig',
+                        key: field.key,
+                        value: event.target.checked ? 'true' : '',
+                      })
+                    }
+                  />
+                  <div className="field-checkbox-copy">
+                    <span className="field-checkbox-title">{field.label}</span>
+                    {field.description ? (
+                      <span className="field-checkbox-note">{field.description}</span>
+                    ) : null}
                   </div>
-                  <span className="toggle-control">
-                    <input
-                      aria-label={field.label}
-                      className="sr-only-input"
-                      type="checkbox"
-                      checked={
-                        (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
-                      }
-                      disabled={disableInputs}
-                      onChange={(event) =>
-                        dispatch({
-                          type: 'updateProviderConfig',
-                          key: field.key,
-                          value: event.target.checked ? 'true' : '',
-                        })
-                      }
-                    />
-                    <span className="toggle-switch" aria-hidden="true">
-                      <span className="toggle-knob" />
-                    </span>
-                  </span>
                 </>
               ) : (
                 <>

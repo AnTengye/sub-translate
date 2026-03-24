@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import SubtitleTranslatorPage from './SubtitleTranslatorPage';
@@ -54,7 +56,8 @@ describe('SubtitleTranslatorPage', () => {
     fireEvent.change(input, { target: { files: [file] } });
 
     const toggle = await screen.findByLabelText(/关闭 Thinking/i);
-    expect(toggle.closest('.field-toggle')).not.toBeNull();
+    expect(toggle.closest('.field-checkbox')).not.toBeNull();
+    expect(toggle.closest('.field-toggle')).toBeNull();
     expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);
@@ -76,12 +79,19 @@ describe('SubtitleTranslatorPage', () => {
     fireEvent.click(await screen.findByRole('button', { name: /百度大模型翻译 api/i }));
 
     const toggle = await screen.findByLabelText(/标点预处理（实验性）/i);
-    expect(toggle.closest('.field-toggle')).not.toBeNull();
+    expect(toggle.closest('.field-checkbox')).not.toBeNull();
+    expect(toggle.closest('.field-toggle')).toBeNull();
     expect(screen.getByText(/减少模型按句拆分导致的错位风险/i)).toBeInTheDocument();
     expect(toggle).not.toBeChecked();
 
     fireEvent.click(toggle);
     expect(toggle).toBeChecked();
+  });
+
+  it('does not apply full-width field input styling to checkbox controls', () => {
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
+
+    expect(css).toContain(".field input:not([type='checkbox'])");
   });
 
   it('imports subtitle files through drag and drop', async () => {
