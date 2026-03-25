@@ -53,6 +53,10 @@ describe('provider registry', () => {
           temperature: '0.2',
           disableThinking: 'true',
         },
+        {
+          apiEndpoint: 'https://runtime-openai.example/v1',
+          apiKey: 'runtime-openai-key',
+        },
         new AbortController().signal,
       ),
     ).resolves.toEqual(['你好']);
@@ -79,6 +83,10 @@ describe('provider registry', () => {
             model: 'gpt-4o-mini',
             temperature: '0.2',
             disableThinking: 'true',
+          },
+          runtimeOverrides: {
+            apiEndpoint: 'https://runtime-openai.example/v1',
+            apiKey: 'runtime-openai-key',
           },
         }),
       }),

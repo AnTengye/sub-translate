@@ -148,9 +148,10 @@ describe('createAppServer', () => {
   });
 
   it('handles translation proxy requests', async () => {
+    const translateImpl = vi.fn().mockResolvedValue(['你好']);
     const app = await startServer({
       distDir: join(process.cwd(), 'dist'),
-      translateImpl: vi.fn().mockResolvedValue(['你好']),
+      translateImpl,
       env: {
         NODE_ENV: 'test',
       },
@@ -167,12 +168,89 @@ describe('createAppServer', () => {
         options: {
           model: 'gpt-4o-mini',
         },
+        runtimeOverrides: {
+          apiEndpoint: 'https://runtime-openai.example/v1',
+          apiKey: 'runtime-openai-key',
+        },
       }),
     });
 
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toEqual({
       translations: ['你好'],
+    });
+    expect(translateImpl).toHaveBeenCalledWith(
+      'openai-compatible',
+      expect.objectContaining({
+        options: {
+          model: 'gpt-4o-mini',
+        },
+        runtimeOverrides: {
+          apiEndpoint: 'https://runtime-openai.example/v1',
+          apiKey: 'runtime-openai-key',
+        },
+      }),
+      expect.any(AbortSignal),
+      {
+        env: {
+          NODE_ENV: 'test',
+        },
+      },
+    );
+
+    await app.close();
+  });
+
+  it('returns provider runtime default seeds for the advanced config panel', async () => {
+    const app = await startServer({
+      distDir: join(process.cwd(), 'dist'),
+      translateImpl: vi.fn(),
+      env: {
+        NODE_ENV: 'test',
+        VITE_DEFAULT_PROVIDER: 'claude-compatible',
+        VITE_OPENAI_MODEL: 'qwen-local',
+        VITE_CLAUDE_MODEL: 'claude-sonnet',
+        OPENAI_API_ENDPOINT: 'http://localhost:11434/v1',
+        OPENAI_API_KEY: 'openai-key',
+        CLAUDE_API_ENDPOINT: 'https://claude.example.com/v1',
+        CLAUDE_API_KEY: 'claude-key',
+        BAIDU_API_ENDPOINT: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+        BAIDU_APP_ID: 'baidu-app-id',
+        BAIDU_API_KEY: 'baidu-key',
+        BAIDU_SECRET_KEY: 'baidu-secret',
+      },
+    });
+
+    const response = await fetch(`${app.baseUrl}/api/provider-profiles/defaults`);
+
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({
+      defaultProvider: 'claude-compatible',
+      providers: {
+        'openai-compatible': {
+          profileName: 'Default OpenAI',
+          apiEndpoint: 'http://localhost:11434/v1',
+          apiKey: 'openai-key',
+          model: 'qwen-local',
+          disableThinking: '',
+        },
+        'claude-compatible': {
+          profileName: 'Default Claude',
+          apiEndpoint: 'https://claude.example.com/v1',
+          apiKey: 'claude-key',
+          model: 'claude-sonnet',
+        },
+        baidu: {
+          profileName: 'Default Baidu',
+          apiEndpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
+          appId: 'baidu-app-id',
+          apiKey: 'baidu-key',
+          secretKey: 'baidu-secret',
+          modelType: 'llm',
+          reference: '',
+          punctuationPreprocessing: '',
+        },
+      },
     });
 
     await app.close();

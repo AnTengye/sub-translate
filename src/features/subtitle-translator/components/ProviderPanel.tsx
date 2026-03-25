@@ -1,5 +1,6 @@
 import { listProviderDefinitions } from '../../../lib/providers/registry';
 import type { ProviderId } from '../../../lib/providers/types';
+import { getActiveProviderProfile } from '../config-storage';
 import type { SubtitleTranslatorAction } from '../state/reducer';
 import type { SubtitleTranslatorState } from '../types';
 
@@ -9,6 +10,7 @@ interface ProviderPanelProps {
   onStart: () => void | Promise<void>;
   onCancelTranslation: () => void;
   onReset: () => void;
+  onOpenAdvancedConfig: () => void;
 }
 
 const providerDefinitions = listProviderDefinitions();
@@ -19,12 +21,14 @@ export function ProviderPanel({
   onStart,
   onCancelTranslation,
   onReset,
+  onOpenAdvancedConfig,
 }: ProviderPanelProps) {
   const activeProvider = providerDefinitions.find(
     (provider) => provider.id === state.provider,
   )!;
 
   const disableInputs = state.step === 'translating' || state.isRetrying || state.retryingIndex !== null;
+  const activeProfile = getActiveProviderProfile(state.providerProfiles, state.provider);
 
   return (
     <aside className="sidebar">
@@ -47,6 +51,14 @@ export function ProviderPanel({
             <div className="section-kicker">Provider</div>
             <div className="section-title">翻译引擎</div>
           </div>
+          <button
+            className="gear-button"
+            type="button"
+            aria-label="高级配置"
+            onClick={onOpenAdvancedConfig}
+          >
+            ⚙
+          </button>
         </div>
         <div className="provider-grid">
           {providerDefinitions.map((provider) => (
@@ -71,14 +83,15 @@ export function ProviderPanel({
             </button>
           ))}
         </div>
+        <div className="profile-chip">当前配置：{activeProfile.name}</div>
         <p className="muted-text">{activeProvider.desc}</p>
-        {activeProvider.corsNote ? <p className="warn-text">{activeProvider.corsNote}</p> : null}
+        <p className="warn-text">高级配置中的 endpoint / key 保存在本地，保存后后续任务即时生效。</p>
 
         <div className="field-stack">
           {activeProvider.fields.map((field) => (
             <label
               key={field.key}
-              className={field.type === 'checkbox' ? 'field field-toggle' : 'field'}
+              className={field.type === 'checkbox' ? 'field field-checkbox' : 'field'}
             >
               {field.type === 'select' ? (
                 <>
@@ -103,31 +116,28 @@ export function ProviderPanel({
                 </>
               ) : field.type === 'checkbox' ? (
                 <>
-                  <div className="toggle-copy">
-                    <span className="toggle-title">{field.label}</span>
-                    {field.description ? <span className="toggle-note">{field.description}</span> : null}
+                  <input
+                    aria-label={field.label}
+                    className="field-checkbox-input"
+                    type="checkbox"
+                    checked={
+                      (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
+                    }
+                    disabled={disableInputs}
+                    onChange={(event) =>
+                      dispatch({
+                        type: 'updateProviderConfig',
+                        key: field.key,
+                        value: event.target.checked ? 'true' : '',
+                      })
+                    }
+                  />
+                  <div className="field-checkbox-copy">
+                    <span className="field-checkbox-title">{field.label}</span>
+                    {field.description ? (
+                      <span className="field-checkbox-note">{field.description}</span>
+                    ) : null}
                   </div>
-                  <span className="toggle-control">
-                    <input
-                      aria-label={field.label}
-                      className="sr-only-input"
-                      type="checkbox"
-                      checked={
-                        (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
-                      }
-                      disabled={disableInputs}
-                      onChange={(event) =>
-                        dispatch({
-                          type: 'updateProviderConfig',
-                          key: field.key,
-                          value: event.target.checked ? 'true' : '',
-                        })
-                      }
-                    />
-                    <span className="toggle-switch" aria-hidden="true">
-                      <span className="toggle-knob" />
-                    </span>
-                  </span>
                 </>
               ) : (
                 <>

@@ -1,10 +1,18 @@
-import { useMemo, useReducer } from 'react';
+import { useEffect, useMemo, useReducer, useState } from 'react';
+import { createAppProviderRuntimeSeeds } from '../../lib/config/env';
 import { serializeSrt } from '../../lib/subtitle/srt';
+import { AdvancedConfigPanel } from './components/AdvancedConfigPanel';
 import { ProviderPanel } from './components/ProviderPanel';
 import { ResultToolbar } from './components/ResultToolbar';
 import { SubtitleList } from './components/SubtitleList';
 import { TranslationPanel } from './components/TranslationPanel';
 import { UploadScreen } from './components/UploadScreen';
+import {
+  createDefaultProviderProfiles,
+  providerProfilesStorageKey,
+  saveProviderProfiles,
+  type ProviderRuntimeSeeds,
+} from './config-storage';
 import { useFileImport } from './hooks/useFileImport';
 import { useTranslationController } from './hooks/useTranslationController';
 import { createInitialState, subtitleTranslatorReducer } from './state/reducer';
@@ -25,6 +33,8 @@ function getStageLabel(step: 'upload' | 'config' | 'translating' | 'done') {
 }
 
 export default function SubtitleTranslatorPage() {
+  const [isAdvancedConfigOpen, setIsAdvancedConfigOpen] = useState(false);
+  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     subtitleTranslatorReducer,
     undefined,
@@ -32,6 +42,44 @@ export default function SubtitleTranslatorPage() {
   );
   const { importFile } = useFileImport(dispatch);
   const translationController = useTranslationController(state, dispatch);
+
+  useEffect(() => {
+    if (window.localStorage.getItem(providerProfilesStorageKey)) {
+      return;
+    }
+
+    let active = true;
+
+    fetch('/api/provider-profiles/defaults')
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error(`failed to load defaults ${response.status}`);
+        }
+
+        return (await response.json()) as ProviderRuntimeSeeds;
+      })
+      .then((runtimeSeeds) => {
+        if (!active || window.localStorage.getItem(providerProfilesStorageKey)) {
+          return;
+        }
+
+        const providerProfiles = createDefaultProviderProfiles(runtimeSeeds);
+        saveProviderProfiles(providerProfiles);
+        dispatch({ type: 'replaceProviderProfiles', providerProfiles });
+      })
+      .catch(() => {
+        if (!active || window.localStorage.getItem(providerProfilesStorageKey)) {
+          return;
+        }
+
+        const providerProfiles = createDefaultProviderProfiles(createAppProviderRuntimeSeeds());
+        dispatch({ type: 'replaceProviderProfiles', providerProfiles });
+      });
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   const doneCount = state.display.filter((entry) => entry.status === 'done').length;
   const errorCount = state.display.filter((entry) => entry.status === 'error').length;
@@ -72,6 +120,13 @@ export default function SubtitleTranslatorPage() {
     dispatch({ type: 'setDisplay', display: state.entries });
     dispatch({ type: 'setError', error: null });
     dispatch({ type: 'setFilter', filter: 'all' });
+  }
+
+  function handleSaveProviderProfiles(providerProfiles: Parameters<typeof saveProviderProfiles>[0]) {
+    saveProviderProfiles(providerProfiles);
+    dispatch({ type: 'replaceProviderProfiles', providerProfiles });
+    setSaveMessage('已保存，将用于后续新任务');
+    setIsAdvancedConfigOpen(false);
   }
 
   if (state.step === 'upload') {
@@ -125,6 +180,7 @@ export default function SubtitleTranslatorPage() {
           onStart={translationController.startTranslation}
           onCancelTranslation={translationController.cancelTranslation}
           onReset={() => dispatch({ type: 'reset' })}
+          onOpenAdvancedConfig={() => setIsAdvancedConfigOpen(true)}
         />
 
         <TranslationPanel
@@ -163,6 +219,7 @@ export default function SubtitleTranslatorPage() {
           />
 
           {state.error ? <p className="error-banner">{state.error}</p> : null}
+          {saveMessage ? <p className="save-banner">{saveMessage}</p> : null}
 
           <SubtitleList
             entries={filteredEntries}
@@ -171,6 +228,15 @@ export default function SubtitleTranslatorPage() {
           />
         </TranslationPanel>
       </div>
+
+      <AdvancedConfigPanel
+        isOpen={isAdvancedConfigOpen}
+        providerProfiles={state.providerProfiles}
+        initialProvider={state.provider}
+        disableSave={busy}
+        onClose={() => setIsAdvancedConfigOpen(false)}
+        onSave={handleSaveProviderProfiles}
+      />
     </main>
   );
 }

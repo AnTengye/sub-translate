@@ -19,6 +19,10 @@ describe('validateTranslateRequest', () => {
           model: 'gpt-4o-mini',
           temperature: 0.2,
         },
+        runtimeOverrides: {
+          apiEndpoint: 'http://localhost:11434/v1',
+          apiKey: 'runtime-openai-key',
+        },
       }),
     ).toEqual({
       runId: 'run-123',
@@ -34,6 +38,10 @@ describe('validateTranslateRequest', () => {
       options: {
         model: 'gpt-4o-mini',
         temperature: 0.2,
+      },
+      runtimeOverrides: {
+        apiEndpoint: 'http://localhost:11434/v1',
+        apiKey: 'runtime-openai-key',
       },
     });
   });
@@ -55,6 +63,18 @@ describe('validateTranslateRequest', () => {
         },
       }),
     ).toThrow('存在不允许的配置项: endpoint');
+  });
+
+  it('rejects runtime override fields outside the provider allowlist', () => {
+    expect(() =>
+      validateTranslateRequest('claude-compatible', {
+        texts: ['こんにちは'],
+        runtimeOverrides: {
+          apiEndpoint: 'https://claude.example.com/v1',
+          appId: 'should-not-be-allowed',
+        },
+      }),
+    ).toThrow('存在不允许的运行时配置项: appId');
   });
 
   it('rejects unknown providers', () => {
@@ -99,6 +119,7 @@ describe('validateTranslateRequest', () => {
         modelType: 'llm',
         punctuationPreprocessing: 'true',
       },
+      runtimeOverrides: {},
     });
   });
 
@@ -120,6 +141,55 @@ describe('validateTranslateRequest', () => {
         model: 'qwen-turbo',
         disableThinking: 'true',
       },
+      runtimeOverrides: {},
+    });
+  });
+
+  it('allows baidu runtime credential overrides', () => {
+    expect(
+      validateTranslateRequest('baidu', {
+        texts: ['こんにちは'],
+        runtimeOverrides: {
+          apiEndpoint: 'https://baidu.example.com',
+          appId: 'runtime-app-id',
+          secretKey: 'runtime-secret-key',
+        },
+      }),
+    ).toEqual({
+      runId: undefined,
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: undefined,
+      options: {},
+      runtimeOverrides: {
+        apiEndpoint: 'https://baidu.example.com',
+        appId: 'runtime-app-id',
+        secretKey: 'runtime-secret-key',
+      },
+    });
+  });
+
+  it('rejects malformed runtime override payloads', () => {
+    expect(() =>
+      validateTranslateRequest('openai-compatible', {
+        texts: ['こんにちは'],
+        runtimeOverrides: ['bad'],
+      }),
+    ).toThrow('运行时配置格式无效');
+  });
+
+  it('defaults missing runtime overrides to an empty object', () => {
+    expect(
+      validateTranslateRequest('openai-compatible', {
+        texts: ['こんにちは'],
+      }),
+    ).toEqual({
+      runId: undefined,
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: undefined,
+      options: {},
+      runtimeOverrides: {},
     });
   });
 });

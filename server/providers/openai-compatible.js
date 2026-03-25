@@ -59,9 +59,18 @@ function buildTranslationMessages(texts, contextTexts) {
 export async function translateWithOpenAiCompatible(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
-  const endpoint = (env.OPENAI_API_ENDPOINT || 'https://api.openai.com/v1').replace(/\/$/, '');
+  const runtimeOverrides =
+    request.runtimeOverrides && typeof request.runtimeOverrides === 'object'
+      ? request.runtimeOverrides
+      : {};
+  const endpoint = (
+    runtimeOverrides.apiEndpoint ||
+    env.OPENAI_API_ENDPOINT ||
+    'https://api.openai.com/v1'
+  ).replace(/\/$/, '');
+  const apiKey = runtimeOverrides.apiKey || env.OPENAI_API_KEY;
 
-  if (!env.OPENAI_API_KEY) {
+  if (!apiKey) {
     throw new Error('服务端未配置 OPENAI_API_KEY');
   }
 
@@ -83,7 +92,7 @@ export async function translateWithOpenAiCompatible(request, signal, deps = {}) 
     signal,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      Authorization: `Bearer ${apiKey}`,
     },
     body: JSON.stringify(payload),
   });

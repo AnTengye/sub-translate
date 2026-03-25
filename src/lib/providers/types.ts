@@ -36,6 +36,13 @@ export interface TranslationRunEntry {
   text: string;
 }
 
+export interface ProviderRuntimeOverrides {
+  apiEndpoint?: string;
+  apiKey?: string;
+  appId?: string;
+  secretKey?: string;
+}
+
 export interface TranslationRunCreatePayload {
   fileName: string;
   provider: ProviderId;
