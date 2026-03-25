@@ -1,5 +1,6 @@
 import type { SubtitleEntry } from '../../lib/subtitle/types';
 import type { ProviderId } from '../../lib/providers/types';
+import type { ProviderProfileStorageData } from './config-storage';
 
 export interface TranslationConfig {
   batchSize: number;
@@ -23,6 +24,7 @@ export interface SubtitleTranslatorState {
   entries: SubtitleEntry[];
   display: SubtitleEntry[];
   provider: ProviderId;
+  providerProfiles: ProviderProfileStorageData;
   providerConfig: Record<string, string>;
   translationConfig: TranslationConfig;
   progress: number;

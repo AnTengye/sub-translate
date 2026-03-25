@@ -77,9 +77,21 @@ export async function translateWithBaidu(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
   const now = deps.now ?? Date.now;
-  const endpoint = env.BAIDU_API_ENDPOINT || 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate';
+  const runtimeOverrides =
+    request.runtimeOverrides && typeof request.runtimeOverrides === 'object'
+      ? request.runtimeOverrides
+      : {};
+  const endpoint =
+    runtimeOverrides.apiEndpoint ||
+    env.BAIDU_API_ENDPOINT ||
+    'https://fanyi-api.baidu.com/ait/api/aiTextTranslate';
+  const appId = runtimeOverrides.appId || env.BAIDU_APP_ID;
+  const runtimeApiKey = runtimeOverrides.apiKey;
+  const runtimeSecretKey = runtimeOverrides.secretKey;
+  const apiKey = runtimeApiKey || (!runtimeSecretKey ? env.BAIDU_API_KEY : '');
+  const secretKey = runtimeSecretKey || env.BAIDU_SECRET_KEY;
 
-  if (!env.BAIDU_APP_ID) {
+  if (!appId) {
     throw new Error('服务端未配置 BAIDU_APP_ID');
   }
 
@@ -91,7 +103,7 @@ export async function translateWithBaidu(request, signal, deps = {}) {
     : request.texts;
   const query = normalizedTexts.join('\n');
   const body = {
-    appid: env.BAIDU_APP_ID,
+    appid: appId,
     from: 'jp',
     to: 'zh',
     q: query,
@@ -117,12 +129,12 @@ export async function translateWithBaidu(request, signal, deps = {}) {
     'Content-Type': 'application/json',
   };
 
-  if (env.BAIDU_API_KEY) {
-    headers.Authorization = `Bearer ${env.BAIDU_API_KEY}`;
-  } else if (env.BAIDU_SECRET_KEY) {
+  if (apiKey) {
+    headers.Authorization = `Bearer ${apiKey}`;
+  } else if (secretKey) {
     const salt = String(now());
     body.salt = salt;
-    body.sign = md5(`${env.BAIDU_APP_ID}${query}${salt}${env.BAIDU_SECRET_KEY}`);
+    body.sign = md5(`${appId}${query}${salt}${secretKey}`);
   } else {
     throw new Error('服务端未配置 BAIDU_API_KEY 或 BAIDU_SECRET_KEY');
   }

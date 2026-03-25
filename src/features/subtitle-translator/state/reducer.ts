@@ -1,6 +1,5 @@
-import { appEnv } from '../../../lib/config/env';
+import { createAppProviderRuntimeSeeds } from '../../../lib/config/env';
 import type { SubtitleEntry } from '../../../lib/subtitle/types';
-import { getProviderDefinition } from '../../../lib/providers/registry';
 import type {
   SubtitleFilter,
   SubtitleTranslatorState,
@@ -8,6 +7,12 @@ import type {
   TranslationLogEntry,
   WorkflowStep,
 } from '../types';
+import {
+  getActiveProviderProfile,
+  loadProviderProfiles,
+  type ProviderProfileStorageData,
+  updateActiveProviderProfileConfig,
+} from '../config-storage';
 
 type ProviderId = SubtitleTranslatorState['provider'];
 
@@ -16,6 +21,7 @@ export type SubtitleTranslatorAction =
   | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
   | { type: 'setProvider'; provider: ProviderId }
+  | { type: 'replaceProviderProfiles'; providerProfiles: ProviderProfileStorageData }
   | { type: 'updateProviderConfig'; key: string; value: string }
   | { type: 'updateTranslationConfig'; key: keyof TranslationConfig; value: number }
   | { type: 'startTranslation' }
@@ -33,18 +39,28 @@ export type SubtitleTranslatorAction =
   | { type: 'finishRetrySingle'; display: SubtitleEntry[]; index: number | null }
   | { type: 'setError'; error: string | null };
 
-function getDefaultProviderConfig(provider: ProviderId) {
-  return { ...getProviderDefinition(provider).defaults };
+function getActiveProviderConfig(
+  providerProfiles: ProviderProfileStorageData,
+  provider: ProviderId,
+): Record<string, string> {
+  const activeProfile = getActiveProviderProfile(providerProfiles, provider);
+
+  return activeProfile ? { ...activeProfile.config } : {};
 }
 
-export function createInitialState(): SubtitleTranslatorState {
+export function createInitialState(
+  providerProfiles = loadProviderProfiles(createAppProviderRuntimeSeeds()),
+): SubtitleTranslatorState {
+  const provider = providerProfiles.defaultProvider;
+
   return {
     step: 'upload',
     fileName: '',
     entries: [],
     display: [],
-    provider: appEnv.defaultProvider,
-    providerConfig: getDefaultProviderConfig(appEnv.defaultProvider),
+    provider,
+    providerProfiles,
+    providerConfig: getActiveProviderConfig(providerProfiles, provider),
     translationConfig: {
       batchSize: 20,
       contextLines: 3,
@@ -89,11 +105,20 @@ export function subtitleTranslatorReducer(
       return {
         ...state,
         provider: action.provider,
-        providerConfig: getDefaultProviderConfig(action.provider),
+        providerConfig: getActiveProviderConfig(state.providerProfiles, action.provider),
+      };
+    case 'replaceProviderProfiles':
+      return {
+        ...state,
+        providerProfiles: action.providerProfiles,
+        providerConfig: getActiveProviderConfig(action.providerProfiles, state.provider),
       };
     case 'updateProviderConfig':
       return {
         ...state,
+        providerProfiles: updateActiveProviderProfileConfig(state.providerProfiles, state.provider, {
+          [action.key]: action.value,
+        }),
         providerConfig: {
           ...state.providerConfig,
           [action.key]: action.value,

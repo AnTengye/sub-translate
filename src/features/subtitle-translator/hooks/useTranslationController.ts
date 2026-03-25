@@ -4,6 +4,7 @@ import {
   dispatchTranslate as dispatchTranslateWithProvider,
   finalizeTranslationRun,
 } from '../../../lib/providers/registry';
+import type { ProviderRuntimeOverrides } from '../../../lib/providers/types';
 import type { SubtitleEntry } from '../../../lib/subtitle/types';
 import type { SubtitleTranslatorAction } from '../state/reducer';
 import type { SubtitleTranslatorState } from '../types';
@@ -29,6 +30,56 @@ function summarizeDisplay(entries: SubtitleEntry[], targetedEntries?: number) {
   };
 }
 
+function buildProviderOptions(state: SubtitleTranslatorState) {
+  switch (state.provider) {
+    case 'openai-compatible': {
+      const config: Record<string, string> = {};
+      if (state.providerConfig.model) {
+        config.model = state.providerConfig.model;
+      }
+      if (state.providerConfig.disableThinking) {
+        config.disableThinking = state.providerConfig.disableThinking;
+      }
+      config.temperature = String(state.translationConfig.temperature);
+      return config;
+    }
+    case 'claude-compatible':
+      return state.providerConfig.model ? { model: state.providerConfig.model } : {};
+    case 'baidu': {
+      const config: Record<string, string> = {};
+      ['modelType', 'reference', 'punctuationPreprocessing'].forEach((key) => {
+        const value = state.providerConfig[key];
+        if (value) {
+          config[key] = value;
+        }
+      });
+      return config;
+    }
+    default:
+      return {};
+  }
+}
+
+function buildRuntimeOverrides(state: SubtitleTranslatorState): ProviderRuntimeOverrides {
+  switch (state.provider) {
+    case 'openai-compatible':
+    case 'claude-compatible':
+      return {
+        apiEndpoint: state.providerConfig.apiEndpoint || undefined,
+        apiKey: state.providerConfig.apiKey || undefined,
+      };
+    case 'baidu':
+      return {
+        apiEndpoint: state.providerConfig.apiEndpoint || undefined,
+        appId: state.providerConfig.appId || undefined,
+        apiKey: state.providerConfig.apiKey || undefined,
+        secretKey: state.providerConfig.secretKey || undefined,
+      };
+    default:
+      return {};
+  }
+}
+
 export function useTranslationController(
   state: SubtitleTranslatorState,
   dispatch: React.Dispatch<SubtitleTranslatorAction>,
@@ -42,19 +93,10 @@ export function useTranslationController(
   }, [state.display]);
 
   const providerRuntimeConfig = useMemo(
-    () => {
-      const config = Object.fromEntries(
-        Object.entries(state.providerConfig).filter(([, value]) => value !== ''),
-      ) as Record<string, string>;
-
-      if (state.provider === 'openai-compatible') {
-        config.temperature = String(state.translationConfig.temperature);
-      }
-
-      return config;
-    },
-    [state.provider, state.providerConfig, state.translationConfig.temperature],
+    () => buildProviderOptions(state),
+    [state],
   );
+  const providerRuntimeOverrides = useMemo(() => buildRuntimeOverrides(state), [state]);
 
   function appendLog(message: string) {
     dispatch({
@@ -144,6 +186,7 @@ export function useTranslationController(
             batch,
             currentRunId,
             providerRuntimeConfig,
+            providerRuntimeOverrides,
             translationAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries, progress) => {
@@ -210,6 +253,7 @@ export function useTranslationController(
             batch,
             currentRunId,
             providerRuntimeConfig,
+            providerRuntimeOverrides,
             retryAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries) => {
@@ -265,6 +309,7 @@ export function useTranslationController(
             batch,
             currentRunId,
             providerRuntimeConfig,
+            providerRuntimeOverrides,
             retryAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries) => {

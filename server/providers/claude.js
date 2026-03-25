@@ -23,9 +23,18 @@ function buildTranslationMessages(texts, contextTexts) {
 export async function translateWithClaude(request, signal, deps = {}) {
   const fetchImpl = deps.fetchImpl ?? fetch;
   const env = deps.env ?? process.env;
-  const endpoint = (env.CLAUDE_API_ENDPOINT || 'https://api.anthropic.com/v1').replace(/\/$/, '');
+  const runtimeOverrides =
+    request.runtimeOverrides && typeof request.runtimeOverrides === 'object'
+      ? request.runtimeOverrides
+      : {};
+  const endpoint = (
+    runtimeOverrides.apiEndpoint ||
+    env.CLAUDE_API_ENDPOINT ||
+    'https://api.anthropic.com/v1'
+  ).replace(/\/$/, '');
+  const apiKey = runtimeOverrides.apiKey || env.CLAUDE_API_KEY;
 
-  if (!env.CLAUDE_API_KEY) {
+  if (!apiKey) {
     throw new Error('服务端未配置 CLAUDE_API_KEY');
   }
 
@@ -41,7 +50,7 @@ export async function translateWithClaude(request, signal, deps = {}) {
     signal,
     headers: {
       'Content-Type': 'application/json',
-      'x-api-key': env.CLAUDE_API_KEY,
+      'x-api-key': apiKey,
       'anthropic-version': '2023-06-01',
     },
     body: JSON.stringify(payload),

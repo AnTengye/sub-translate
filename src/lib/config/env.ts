@@ -1,4 +1,5 @@
 import type { ProviderId } from '../providers/types';
+import type { ProviderRuntimeSeeds } from '../../features/subtitle-translator/config-storage';
 
 function readEnv(value: string | undefined, fallback: string) {
   return value && value.trim().length > 0 ? value : fallback;
@@ -21,3 +22,34 @@ export const appEnv = {
   claudeModel: readEnv(import.meta.env.VITE_CLAUDE_MODEL, 'claude-3-5-sonnet-latest'),
   openAiModel: readEnv(import.meta.env.VITE_OPENAI_MODEL, 'gpt-4o-mini'),
 };
+
+export function createAppProviderRuntimeSeeds(): ProviderRuntimeSeeds {
+  return {
+    defaultProvider: appEnv.defaultProvider,
+    providers: {
+      'openai-compatible': {
+        profileName: 'Default OpenAI',
+        apiEndpoint: '',
+        apiKey: '',
+        model: appEnv.openAiModel,
+        disableThinking: '',
+      },
+      'claude-compatible': {
+        profileName: 'Default Claude',
+        apiEndpoint: '',
+        apiKey: '',
+        model: appEnv.claudeModel,
+      },
+      baidu: {
+        profileName: 'Default Baidu',
+        apiEndpoint: '',
+        appId: '',
+        apiKey: '',
+        secretKey: '',
+        modelType: 'llm',
+        reference: '',
+        punctuationPreprocessing: '',
+      },
+    },
+  };
+}

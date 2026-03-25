@@ -123,6 +123,42 @@ function validateRunFinalizeRequest(payload) {
   };
 }
 
+function readProviderRuntimeSeeds(env) {
+  return {
+    defaultProvider:
+      env.VITE_DEFAULT_PROVIDER === 'claude-compatible' ||
+      env.VITE_DEFAULT_PROVIDER === 'baidu' ||
+      env.VITE_DEFAULT_PROVIDER === 'openai-compatible'
+        ? env.VITE_DEFAULT_PROVIDER
+        : 'openai-compatible',
+    providers: {
+      'openai-compatible': {
+        profileName: 'Default OpenAI',
+        apiEndpoint: env.OPENAI_API_ENDPOINT || '',
+        apiKey: env.OPENAI_API_KEY || '',
+        model: env.VITE_OPENAI_MODEL || 'gpt-4o-mini',
+        disableThinking: '',
+      },
+      'claude-compatible': {
+        profileName: 'Default Claude',
+        apiEndpoint: env.CLAUDE_API_ENDPOINT || '',
+        apiKey: env.CLAUDE_API_KEY || '',
+        model: env.VITE_CLAUDE_MODEL || 'claude-3-5-sonnet-latest',
+      },
+      baidu: {
+        profileName: 'Default Baidu',
+        apiEndpoint: env.BAIDU_API_ENDPOINT || '',
+        appId: env.BAIDU_APP_ID || '',
+        apiKey: env.BAIDU_API_KEY || '',
+        secretKey: env.BAIDU_SECRET_KEY || '',
+        modelType: 'llm',
+        reference: '',
+        punctuationPreprocessing: '',
+      },
+    },
+  };
+}
+
 function normalizeTranslateResult(result) {
   if (Array.isArray(result)) {
     return {
@@ -188,6 +224,11 @@ export function createAppHandler(options = {}) {
         const payload = validateRunCreateRequest(await readJsonBody(request));
         const result = await logger.createRun(payload);
         sendJson(response, 200, result);
+        return;
+      }
+
+      if (request.method === 'GET' && url.pathname === '/api/provider-profiles/defaults') {
+        sendJson(response, 200, readProviderRuntimeSeeds(env));
         return;
       }
 

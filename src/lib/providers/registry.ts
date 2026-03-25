@@ -7,6 +7,7 @@ import {
 import type {
   ProviderDefinition,
   ProviderId,
+  ProviderRuntimeOverrides,
   TranslationBatchMetadata,
   TranslationRunCreatePayload,
 } from './types';
@@ -56,7 +57,17 @@ export async function dispatchTranslate(
   batch: TranslationBatchMetadata,
   runId: string,
   config: Record<string, string>,
+  runtimeOverrides: ProviderRuntimeOverrides,
   signal: AbortSignal,
 ): Promise<string[]> {
-  return translateViaProxy(provider, texts, contextTexts, batch, runId, config, signal);
+  return translateViaProxy(
+    provider,
+    texts,
+    contextTexts,
+    batch,
+    runId,
+    config,
+    runtimeOverrides,
+    signal,
+  );
 }

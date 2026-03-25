@@ -11,6 +11,12 @@ const providerOptionAllowlist = {
   ]),
 };
 
+const providerRuntimeOverrideAllowlist = {
+  'claude-compatible': new Set(['apiEndpoint', 'apiKey']),
+  'openai-compatible': new Set(['apiEndpoint', 'apiKey']),
+  baidu: new Set(['apiEndpoint', 'appId', 'apiKey', 'secretKey']),
+};
+
 function isStringArray(value) {
   return Array.isArray(value) && value.every((item) => typeof item === 'string');
 }
@@ -35,7 +41,8 @@ function isValidBatchMetadata(value) {
 
 export function validateTranslateRequest(provider, payload) {
   const allowedOptions = providerOptionAllowlist[provider];
-  if (!allowedOptions) {
+  const allowedRuntimeOverrides = providerRuntimeOverrideAllowlist[provider];
+  if (!allowedOptions || !allowedRuntimeOverrides) {
     throw new Error('不支持的翻译引擎');
   }
 
@@ -43,7 +50,7 @@ export function validateTranslateRequest(provider, payload) {
     throw new Error('请求体格式无效');
   }
 
-  const { runId, texts, contextTexts = [], batch, options = {} } = payload;
+  const { runId, texts, contextTexts = [], batch, options = {}, runtimeOverrides = {} } = payload;
 
   if (!isStringArray(texts) || texts.length === 0) {
     throw new Error('至少提供一条待翻译字幕');
@@ -65,9 +72,20 @@ export function validateTranslateRequest(provider, payload) {
     throw new Error('配置项格式无效');
   }
 
+  if (!runtimeOverrides || typeof runtimeOverrides !== 'object' || Array.isArray(runtimeOverrides)) {
+    throw new Error('运行时配置格式无效');
+  }
+
   const invalidKeys = Object.keys(options).filter((key) => !allowedOptions.has(key));
   if (invalidKeys.length > 0) {
     throw new Error(`存在不允许的配置项: ${invalidKeys.join(', ')}`);
+  }
+
+  const invalidRuntimeOverrideKeys = Object.keys(runtimeOverrides).filter(
+    (key) => !allowedRuntimeOverrides.has(key),
+  );
+  if (invalidRuntimeOverrideKeys.length > 0) {
+    throw new Error(`存在不允许的运行时配置项: ${invalidRuntimeOverrideKeys.join(', ')}`);
   }
 
   return {
@@ -76,5 +94,6 @@ export function validateTranslateRequest(provider, payload) {
     contextTexts,
     batch,
     options,
+    runtimeOverrides,
   };
 }

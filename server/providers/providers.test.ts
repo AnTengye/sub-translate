@@ -77,6 +77,52 @@ describe('server provider adapters', () => {
     );
   });
 
+  it('prefers request-scoped OpenAI runtime overrides over server env values', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          choices: [{ message: { content: '["你好"]' } }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    await dispatchServerTranslate(
+      'openai-compatible',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {
+          model: 'gpt-4o-mini',
+        },
+        runtimeOverrides: {
+          apiEndpoint: 'https://runtime-openai.example/v1',
+          apiKey: 'runtime-openai-key',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        env: {
+          OPENAI_API_KEY: 'sk-server',
+          OPENAI_API_ENDPOINT: 'https://server-openai.example/v1',
+        },
+      },
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://runtime-openai.example/v1/chat/completions',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          Authorization: 'Bearer runtime-openai-key',
+        }),
+      }),
+    );
+  });
+
   it('normalizes object-array translations from OpenAI-compatible local models', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -363,6 +409,53 @@ describe('server provider adapters', () => {
     );
   });
 
+  it('prefers request-scoped Claude runtime overrides over server env values', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          content: [{ text: '["你好"]' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    const result = await dispatchServerTranslate(
+      'claude-compatible',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {
+          model: 'claude-3-5-sonnet-latest',
+        },
+        runtimeOverrides: {
+          apiEndpoint: 'https://runtime-claude.example/v1',
+          apiKey: 'runtime-claude-key',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        env: {
+          CLAUDE_API_KEY: 'sk-claude',
+          CLAUDE_API_ENDPOINT: 'https://server-claude.example/v1',
+        },
+      },
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://runtime-claude.example/v1/messages',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-api-key': 'runtime-claude-key',
+        }),
+      }),
+    );
+    expect(result.debug.request.headers['x-api-key']).toBe('[REDACTED]');
+  });
+
   it('uses the configured Baidu endpoint with Bearer auth by default', async () => {
     const fetchImpl = vi.fn().mockResolvedValue(
       new Response(
@@ -442,6 +535,60 @@ describe('server provider adapters', () => {
         }),
       }),
     );
+  });
+
+  it('prefers request-scoped Baidu runtime overrides over server env values and keeps auth redacted', async () => {
+    const fetchImpl = vi.fn().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          trans_result: [{ src: 'こんにちは', dst: '你好' }],
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      ),
+    );
+
+    const result = await dispatchServerTranslate(
+      'baidu',
+      {
+        texts: ['こんにちは'],
+        contextTexts: [],
+        options: {},
+        runtimeOverrides: {
+          apiEndpoint: 'https://runtime-baidu.example/translate',
+          appId: 'runtime-app-id',
+          secretKey: 'runtime-secret',
+        },
+      },
+      new AbortController().signal,
+      {
+        fetchImpl,
+        now: () => 1234567890,
+        env: {
+          BAIDU_API_KEY: 'server-api-key',
+          BAIDU_APP_ID: 'server-app-id',
+          BAIDU_API_ENDPOINT: 'https://server-baidu.example/translate',
+          BAIDU_SECRET_KEY: 'server-secret',
+        },
+      },
+    );
+
+    expect(fetchImpl).toHaveBeenCalledWith(
+      'https://runtime-baidu.example/translate',
+      expect.objectContaining({
+        headers: expect.not.objectContaining({
+          Authorization: expect.any(String),
+        }),
+      }),
+    );
+    expect(result.debug.request.headers).not.toHaveProperty('Authorization');
+    expect(result.debug.request.payload).toMatchObject({
+      appid: 'runtime-app-id',
+      salt: '1234567890',
+      sign: '8a452261510810e9a8aea9bc3cc3feda',
+    });
   });
 
   it('realigns split Baidu response items back to the original subtitle entries', async () => {
