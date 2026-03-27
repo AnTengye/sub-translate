@@ -1,6 +1,6 @@
 # SRT Translate
 
-A Japanese subtitle translation tool built with `Vite + React + TypeScript + Node`, designed for local, NAS, or intranet deployment. The current version uses a local proxy service to forward translation requests, keeping third-party API keys secure on the server side.
+A Japanese subtitle translation tool built with `Vite + React + TypeScript + Go`, designed for local, NAS, or intranet deployment. The repository is split into isolated `frontend/` and `backend/` directories while keeping root-level scripts and Docker entrypoints.
 
 ## Features
 
@@ -15,9 +15,11 @@ A Japanese subtitle translation tool built with `Vite + React + TypeScript + Nod
 The project uses a single-service architecture:
 
 - **Frontend**: Handles subtitle upload, configuration, and progress display
-- **Node.js Server**:
+- **Go Server**:
   - Serves the frontend
   - Proxies `/api/translate/:provider` requests
+  - Persists Provider Center state with `Gorm + SQLite`
+  - Writes translation run logs to filesystem JSON files
   - Reads API keys from server-side environment variables
 
 Benefits:
@@ -32,20 +34,32 @@ Benefits:
 
 1. Copy `.env.example` to `.env`
 2. Fill in the API keys for the providers you want to use
-3. Start the development server:
+3. Install frontend dependencies from the repo root:
+
+```bash
+npm install
+```
+
+4. Start the Go API server in one terminal:
+
+```bash
+npm run dev:server
+```
+
+5. Start the Vite client in another terminal:
 
 ```bash
 npm install
 npm run dev
 ```
 
-Default URL: `http://localhost:3000`
+Default frontend URL: `http://localhost:5173`
 
-The dev server handles both the frontend and API proxy.
+Vite proxies `/api/*` to `http://localhost:3000`.
 
 ### Production
 
-Build and start:
+Build the frontend and start the Go server:
 
 ```bash
 npm run build
@@ -86,6 +100,9 @@ These variables are read by the server and never exposed to the frontend:
 ```env
 # Server port (optional, default: 3000)
 PORT=3000
+DATABASE_PATH=data/app.db
+LOG_DIR=logs/translations
+TRANSLATE_MAX_CONCURRENCY=10
 
 # Claude
 CLAUDE_API_ENDPOINT=https://api.anthropic.com/v1
@@ -117,16 +134,19 @@ BAIDU_SECRET_KEY=your_secret_key
 ## Development
 
 ```bash
-# Run tests
+# Run frontend tests
 npm test
 
-# Run tests in watch mode
+# Run frontend tests in watch mode
 npm run test:watch
+
+# Run Go tests
+npm run test:go
 
 # Build for production
 npm run build
 
-# Preview production build
+# Start the Go server
 npm run preview
 ```
 
@@ -152,12 +172,12 @@ Log contents:
 ## Project Structure
 
 ```
-src/
-  features/subtitle-translator/   # Pages, components, hooks, state
-  lib/subtitle/                   # SRT parse/export
-  lib/providers/                  # Provider metadata & frontend adapters
-server/
-  providers/                      # Server-side provider adapters
-  translate/                      # Request validation
-  logging/                        # Translation run logging
+frontend/src/                     # React app source
+frontend/index.html               # Vite entry HTML
+frontend/vite.config.ts           # Frontend build and dev proxy
+backend/cmd/server/               # Go server entrypoint
+backend/internal/app/             # Application services
+backend/internal/domain/          # Domain models
+backend/internal/infra/           # DB, providers, logging, static assets
+backend/internal/transport/http/  # HTTP compatibility layer
 ```

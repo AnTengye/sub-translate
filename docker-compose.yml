@@ -9,6 +9,10 @@ services:
         VITE_OPENAI_MODEL: ${VITE_OPENAI_MODEL:-gpt-4o-mini}
     environment:
       PORT: 3000
+      DIST_DIR: /app/dist
+      DATABASE_PATH: /app/data/app.db
+      LOG_DIR: /app/logs/translations
+      TRANSLATE_MAX_CONCURRENCY: ${TRANSLATE_MAX_CONCURRENCY:-10}
       CLAUDE_API_ENDPOINT: ${CLAUDE_API_ENDPOINT:-https://api.anthropic.com/v1}
       CLAUDE_API_KEY: ${CLAUDE_API_KEY:-}
       OPENAI_API_ENDPOINT: ${OPENAI_API_ENDPOINT:-https://api.openai.com/v1}
@@ -19,4 +23,11 @@ services:
       BAIDU_SECRET_KEY: ${BAIDU_SECRET_KEY:-}
     ports:
       - "8080:3000"
+    volumes:
+      - srt-translate-data:/app/data
+      - srt-translate-logs:/app/logs
     restart: unless-stopped
+
+volumes:
+  srt-translate-data:
+  srt-translate-logs:

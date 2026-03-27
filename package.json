@@ -2,30 +2,17 @@
   "name": "srt-translate",
   "private": true,
   "version": "0.1.0",
-  "type": "module",
+  "workspaces": [
+    "frontend"
+  ],
   "scripts": {
-    "dev": "node --env-file-if-exists=.env server/start.js --mode=development",
-    "build": "tsc -b && vite build",
-    "preview": "node --env-file-if-exists=.env server/start.js --mode=production",
-    "start": "node --env-file-if-exists=.env server/start.js --mode=production",
-    "test": "vitest run",
-    "test:watch": "vitest"
-  },
-  "dependencies": {
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0"
-  },
-  "devDependencies": {
-    "@testing-library/jest-dom": "^6.6.3",
-    "@testing-library/react": "^16.3.0",
-    "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^22.13.10",
-    "@types/react": "^19.0.12",
-    "@types/react-dom": "^19.0.5",
-    "@vitejs/plugin-react": "^5.0.0",
-    "jsdom": "^26.0.0",
-    "typescript": "^5.8.2",
-    "vite": "^6.2.2",
-    "vitest": "^3.0.9"
+    "dev": "npm run -w frontend dev",
+    "dev:server": "go run ./backend/cmd/server",
+    "build": "npm run -w frontend build",
+    "preview": "go run ./backend/cmd/server",
+    "start": "go run ./backend/cmd/server",
+    "test": "npm run -w frontend test",
+    "test:watch": "npm run -w frontend test:watch",
+    "test:go": "go test ./backend/..."
   }
 }

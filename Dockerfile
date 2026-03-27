@@ -1,4 +1,4 @@
-FROM node:22-alpine AS build
+FROM node:22-alpine AS frontend-build
 WORKDIR /app
 
 ARG VITE_APP_TITLE="SRT Translate"
@@ -11,19 +11,32 @@ ENV VITE_DEFAULT_PROVIDER=$VITE_DEFAULT_PROVIDER
 ENV VITE_CLAUDE_MODEL=$VITE_CLAUDE_MODEL
 ENV VITE_OPENAI_MODEL=$VITE_OPENAI_MODEL
 
-COPY package*.json ./
+COPY package.json package-lock.json ./
+COPY frontend/package.json ./frontend/package.json
 RUN npm ci
-COPY . .
-RUN npm run build
+COPY frontend ./frontend
+RUN npm run -w frontend build
 
-FROM node:22-alpine
+FROM golang:1.23-alpine AS go-build
+WORKDIR /app/backend
+
+COPY backend/go.mod backend/go.sum ./
+RUN go mod download
+COPY backend/cmd ./cmd
+COPY backend/internal ./internal
+RUN CGO_ENABLED=0 go build -o /out/srt-translate ./cmd/server
+
+FROM alpine:3.21
 WORKDIR /app
 
 ENV PORT=3000
+ENV DIST_DIR=/app/dist
+ENV DATABASE_PATH=/app/data/app.db
+ENV LOG_DIR=/app/logs/translations
 
-COPY --from=build /app/dist ./dist
-COPY --from=build /app/server ./server
+COPY --from=frontend-build /app/frontend/dist ./dist
+COPY --from=go-build /out/srt-translate ./srt-translate
 
 EXPOSE 3000
 
-CMD ["node", "server/start.js", "--mode=production"]
+CMD ["./srt-translate"]
