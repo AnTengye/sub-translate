@@ -658,3 +658,104 @@ Server files likely added:
 - Provider-level capability switches are persisted and managed server-side.
 - New translation and retry tasks use saved server-side provider configuration.
 - In-flight tasks continue using the run-start snapshot.
+
+## Approved UI Direction Addendum
+
+This addendum supersedes the earlier family-first frontend layout direction for the Provider Center UI while keeping the same server-side data model and APIs.
+
+### Left Column: Saved Configurations
+
+The left side must no longer show three provider families as navigation roots.
+
+Instead, it shows one flat list of saved configurations across all supported provider families.
+
+Each row represents one saved profile and includes:
+
+- provider icon
+- profile name
+- provider type tag
+- enabled or disabled state
+- recent health summary
+
+The list is visually closer to Cherry Studio:
+
+- pale background rail
+- compact rows
+- selected row highlighted with a white surface, subtle border, and light shadow
+- fixed bottom `+ 添加` action
+
+### Add Provider Flow
+
+Creating a new saved configuration must happen through a lightweight modal launched from the bottom-left add button.
+
+The modal includes:
+
+- provider name
+- provider type
+
+Supported provider types in this flow:
+
+- OpenAI
+- Anthropic
+- New API
+- Baidu
+
+The chosen type maps to the existing internal provider families as follows:
+
+- `OpenAI` -> `openai-compatible`
+- `Anthropic` -> `claude-compatible`
+- `New API` -> `openai-compatible`
+- `Baidu` -> `baidu`
+
+`New API` is therefore a frontend creation preset and label variant for the existing OpenAI-compatible runtime path, not a fourth backend provider family.
+
+### Right Column: Cherry Studio Style Editor
+
+The right side becomes a desktop-style form workspace modeled after Cherry Studio rather than stacked product cards.
+
+It includes:
+
+1. top title row with current profile name, provider type label, and enable switch
+2. `API 密钥` block with inline actions such as reveal and connectivity check
+3. `API 地址` block with endpoint input and a muted preview line where relevant
+4. `模型` block with grouped rows and lighter desktop-form styling
+5. footer-level model management actions matching the Cherry Studio mental model
+
+The earlier large card-heavy glassmorphism treatment is not acceptable for this screen.
+
+### Field Scope Rules
+
+#### OpenAI / Anthropic / New API
+
+Provider Center retains:
+
+- connection fields
+- model discovery and manual model management
+- provider enable state
+
+Provider Center removes:
+
+- OpenAI and Anthropic runtime-only switches such as `disableThinking`
+
+Those runtime controls must move to the translation-time workflow instead of the Provider Center.
+
+#### Baidu
+
+Baidu-specific operational fields remain inside Provider Center because they are provider configuration rather than per-run convenience toggles.
+
+Retained Baidu fields:
+
+- `modelType`
+- `reference`
+- `punctuationPreprocessing`
+
+### Visual Constraints
+
+The visual direction must feel consistent with the rest of the app while moving closer to Cherry Studio:
+
+- lighter borders
+- reduced corner radii
+- less frosted-glass depth
+- desktop utility feel over marketing-card feel
+- restrained mint/teal highlight color
+- orange reserved mainly for primary save emphasis

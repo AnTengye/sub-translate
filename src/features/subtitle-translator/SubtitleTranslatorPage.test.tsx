@@ -50,6 +50,41 @@ const providerCenterState = {
             error: null,
           },
         },
+        {
+          id: 'openai-compatible-newapi',
+          family: 'openai-compatible',
+          name: 'New API Mirror',
+          enabled: false,
+          isDefault: false,
+          connection: {
+            apiEndpoint: 'https://newapi.example.com/v1',
+            apiKey: 'newapi-key',
+          },
+          settings: {
+            model: 'gpt-4.1-mini',
+            providerLabel: 'New API',
+          },
+          capabilities: {
+            supportsModelDiscovery: true,
+            supportsConnectionCheck: true,
+            supportsManualModelManagement: true,
+            supportsThinkingToggle: true,
+          },
+          models: [],
+          modelDiscovery: {
+            sourceMode: 'auto',
+            supportsModelDiscovery: true,
+            lastCheckedAt: null,
+            lastStatus: 'idle',
+            lastError: null,
+          },
+          health: {
+            status: 'warning',
+            summary: '已停用',
+            lastCheckedAt: null,
+            error: null,
+          },
+        },
       ],
     },
     'claude-compatible': {
@@ -70,6 +105,7 @@ const providerCenterState = {
           },
           settings: {
             model: 'claude-sonnet',
+            providerLabel: 'Anthropic',
           },
           capabilities: {
             supportsModelDiscovery: false,
@@ -255,7 +291,11 @@ describe('SubtitleTranslatorPage', () => {
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     expect(dialog).toBeInTheDocument();
 
-    const modelInput = within(dialog).getByLabelText(/model/i);
+    expect(within(dialog).getByRole('button', { name: /Local OpenAI/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /New API Mirror/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: /Claude Local/i })).toBeInTheDocument();
+
+    const modelInput = within(dialog).getByLabelText(/默认模型/i);
     fireEvent.change(modelInput, { target: { value: 'gpt-4.1-mini' } });
     await user.click(within(dialog).getByRole('button', { name: /保存配置/i }));
 
@@ -287,11 +327,58 @@ describe('SubtitleTranslatorPage', () => {
     await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
-    await user.click(within(dialog).getByRole('button', { name: /连通性检查/i }));
+    await user.click(within(dialog).getByRole('button', { name: /检测/i }));
     await user.click(within(dialog).getByRole('button', { name: /自动发现模型/i }));
 
     await screen.findByText(/发现 1 个模型/i);
     expect(within(dialog).getByText(/gpt-4.1-mini/i)).toBeInTheDocument();
+  });
+
+  it('opens the add-provider modal and exposes supported provider types', async () => {
+    const user = userEvent.setup();
+    render(<SubtitleTranslatorPage />);
+
+    const input = screen.getByLabelText(/选择文件/i);
+    const file = new File(
+      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
+      'sample.srt',
+      { type: 'text/plain' },
+    );
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
+    await user.click(within(dialog).getByRole('button', { name: /\+ 添加/i }));
+
+    expect(within(dialog).getByRole('dialog', { name: /添加提供商/i })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: 'OpenAI' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: 'Anthropic' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: 'New API' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('option', { name: 'Baidu' })).toBeInTheDocument();
+  });
+
+  it('removes OpenAI runtime toggles from provider center while retaining Baidu-specific fields', async () => {
+    const user = userEvent.setup();
+    render(<SubtitleTranslatorPage />);
+
+    const input = screen.getByLabelText(/选择文件/i);
+    const file = new File(
+      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
+      'sample.srt',
+      { type: 'text/plain' },
+    );
+
+    fireEvent.change(input, { target: { files: [file] } });
+    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+
+    const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
+    expect(within(dialog).queryByLabelText(/disableThinking/i)).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: /Baidu Local/i }));
+    expect(within(dialog).getByLabelText(/modelType/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/reference/i)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/punctuationPreprocessing/i)).toBeInTheDocument();
   });
 
   it('keeps checkbox fields out of full-width text input styling', () => {
