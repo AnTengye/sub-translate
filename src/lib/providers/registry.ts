@@ -52,6 +52,7 @@ export async function finalizeTranslationRun(
 
 export async function dispatchTranslate(
   provider: ProviderId,
+  profileId: string | null,
   texts: string[],
   contextTexts: string[],
   batch: TranslationBatchMetadata,
@@ -62,6 +63,7 @@ export async function dispatchTranslate(
 ): Promise<string[]> {
   return translateViaProxy(
     provider,
+    profileId,
     texts,
     contextTexts,
     batch,

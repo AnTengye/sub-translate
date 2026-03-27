@@ -46,6 +46,7 @@ export interface ProviderRuntimeOverrides {
 export interface TranslationRunCreatePayload {
   fileName: string;
   provider: ProviderId;
+  profileId?: string;
   totalEntries: number;
   entries: TranslationRunEntry[];
   providerConfig: Record<string, string>;

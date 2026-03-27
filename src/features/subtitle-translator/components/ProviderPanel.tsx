@@ -1,6 +1,6 @@
 import { listProviderDefinitions } from '../../../lib/providers/registry';
 import type { ProviderId } from '../../../lib/providers/types';
-import { getActiveProviderProfile } from '../config-storage';
+import type { ProviderCenterProfile } from '../provider-center-api';
 import type { SubtitleTranslatorAction } from '../state/reducer';
 import type { SubtitleTranslatorState } from '../types';
 
@@ -15,6 +15,15 @@ interface ProviderPanelProps {
 
 const providerDefinitions = listProviderDefinitions();
 
+function getActiveProfile(state: SubtitleTranslatorState): ProviderCenterProfile | null {
+  const family = state.providerCenter?.families[state.provider];
+  if (!family) {
+    return null;
+  }
+
+  return family.profiles.find((profile) => profile.id === family.activeProfileId) ?? null;
+}
+
 export function ProviderPanel({
   state,
   dispatch,
@@ -23,12 +32,9 @@ export function ProviderPanel({
   onReset,
   onOpenAdvancedConfig,
 }: ProviderPanelProps) {
-  const activeProvider = providerDefinitions.find(
-    (provider) => provider.id === state.provider,
-  )!;
-
+  const activeProvider = providerDefinitions.find((provider) => provider.id === state.provider)!;
   const disableInputs = state.step === 'translating' || state.isRetrying || state.retryingIndex !== null;
-  const activeProfile = getActiveProviderProfile(state.providerProfiles, state.provider);
+  const activeProfile = getActiveProfile(state);
 
   return (
     <aside className="sidebar">
@@ -52,12 +58,12 @@ export function ProviderPanel({
             <div className="section-title">翻译引擎</div>
           </div>
           <button
-            className="gear-button"
+            className="secondary-button"
             type="button"
-            aria-label="高级配置"
+            aria-label="管理 Providers"
             onClick={onOpenAdvancedConfig}
           >
-            ⚙
+            管理 Providers
           </button>
         </div>
         <div className="provider-grid">
@@ -83,84 +89,14 @@ export function ProviderPanel({
             </button>
           ))}
         </div>
-        <div className="profile-chip">当前配置：{activeProfile.name}</div>
+        <div className="profile-chip">当前配置：{activeProfile?.name ?? '未加载'}</div>
         <p className="muted-text">{activeProvider.desc}</p>
-        <p className="warn-text">高级配置中的 endpoint / key 保存在本地，保存后后续任务即时生效。</p>
-
-        <div className="field-stack">
-          {activeProvider.fields.map((field) => (
-            <label
-              key={field.key}
-              className={field.type === 'checkbox' ? 'field field-checkbox' : 'field'}
-            >
-              {field.type === 'select' ? (
-                <>
-                  <span>{field.label}</span>
-                <select
-                  value={state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? ''}
-                  disabled={disableInputs}
-                  onChange={(event) =>
-                    dispatch({
-                      type: 'updateProviderConfig',
-                      key: field.key,
-                      value: event.target.value,
-                    })
-                  }
-                >
-                  {(field.options ?? []).map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-                </>
-              ) : field.type === 'checkbox' ? (
-                <>
-                  <input
-                    aria-label={field.label}
-                    className="field-checkbox-input"
-                    type="checkbox"
-                    checked={
-                      (state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? '') === 'true'
-                    }
-                    disabled={disableInputs}
-                    onChange={(event) =>
-                      dispatch({
-                        type: 'updateProviderConfig',
-                        key: field.key,
-                        value: event.target.checked ? 'true' : '',
-                      })
-                    }
-                  />
-                  <div className="field-checkbox-copy">
-                    <span className="field-checkbox-title">{field.label}</span>
-                    {field.description ? (
-                      <span className="field-checkbox-note">{field.description}</span>
-                    ) : null}
-                  </div>
-                </>
-              ) : (
-                <>
-                  <span>{field.label}</span>
-                  <input
-                    aria-label={field.label}
-                    type={field.type}
-                    placeholder={field.placeholder}
-                    value={state.providerConfig[field.key] ?? activeProvider.defaults[field.key] ?? ''}
-                    disabled={disableInputs}
-                    onChange={(event) =>
-                      dispatch({
-                        type: 'updateProviderConfig',
-                        key: field.key,
-                        value: event.target.value,
-                      })
-                    }
-                  />
-                </>
-              )}
-            </label>
-          ))}
-        </div>
+        <p className="muted-text">
+          {activeProfile
+            ? `${activeProfile.enabled ? '已启用' : '已停用'} · ${activeProfile.health.summary}`
+            : 'Provider Center 数据加载中'}
+        </p>
+        <p className="warn-text">配置、模型列表、连通性检查全部由服务端统一管理。</p>
       </section>
 
       <section className="panel-card">

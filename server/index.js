@@ -3,6 +3,10 @@ import { access, stat } from 'node:fs/promises';
 import http from 'node:http';
 import { randomUUID } from 'node:crypto';
 import { extname, join, normalize } from 'node:path';
+import { createProviderCenterStorage } from './provider-center/storage.js';
+import { createProviderCenterService } from './provider-center/service.js';
+import { discoverModelsForProfile } from './provider-center/discovery.js';
+import { checkProfileHealth } from './provider-center/health.js';
 import { createTranslationRunLogger } from './logging/translation-run-logger.js';
 import { isFailureTranslation, normalizeTranslationItems } from './providers/response.js';
 import { dispatchServerTranslate } from './providers/index.js';
@@ -177,6 +181,69 @@ function normalizeTranslateResult(result) {
   };
 }
 
+async function resolveProviderProfile(providerCenterService, provider, profileId) {
+  const state = await providerCenterService.read();
+  const family = state.families[provider];
+  if (!family) {
+    return null;
+  }
+
+  const resolvedProfileId = profileId ?? family.activeProfileId;
+  return family.profiles.find((profile) => profile.id === resolvedProfileId) ?? null;
+}
+
+function buildOptionsFromProfile(profile) {
+  if (!profile) {
+    return {};
+  }
+
+  switch (profile.family) {
+    case 'openai-compatible':
+      return {
+        ...(profile.settings.model ? { model: profile.settings.model } : {}),
+        ...(profile.settings.disableThinking
+          ? { disableThinking: profile.settings.disableThinking }
+          : {}),
+      };
+    case 'claude-compatible':
+      return profile.settings.model ? { model: profile.settings.model } : {};
+    case 'baidu':
+      return {
+        ...(profile.settings.modelType ? { modelType: profile.settings.modelType } : {}),
+        ...(profile.settings.reference ? { reference: profile.settings.reference } : {}),
+        ...(profile.settings.punctuationPreprocessing
+          ? { punctuationPreprocessing: profile.settings.punctuationPreprocessing }
+          : {}),
+      };
+    default:
+      return {};
+  }
+}
+
+function buildRuntimeOverridesFromProfile(profile) {
+  if (!profile) {
+    return {};
+  }
+
+  if (profile.family === 'openai-compatible' || profile.family === 'claude-compatible') {
+    return {
+      ...(profile.connection.apiEndpoint ? { apiEndpoint: profile.connection.apiEndpoint } : {}),
+      ...(profile.connection.apiKey ? { apiKey: profile.connection.apiKey } : {}),
+    };
+  }
+
+  if (profile.family === 'baidu') {
+    return {
+      ...(profile.connection.apiEndpoint ? { apiEndpoint: profile.connection.apiEndpoint } : {}),
+      ...(profile.connection.appId ? { appId: profile.connection.appId } : {}),
+      ...(profile.connection.apiKey ? { apiKey: profile.connection.apiKey } : {}),
+      ...(profile.connection.secretKey ? { secretKey: profile.connection.secretKey } : {}),
+    };
+  }
+
+  return {};
+}
+
 async function serveStaticFile(response, distDir, requestPath) {
   const safePath = normalize(requestPath).replace(/^(\.\.[/\\])+/, '');
   const targetPath = join(distDir, safePath);
@@ -210,6 +277,16 @@ export function createAppHandler(options = {}) {
   const distDir = options.distDir ?? join(process.cwd(), 'dist');
   const translateImpl = options.translateImpl ?? dispatchServerTranslate;
   const env = options.env ?? process.env;
+  const providerCenterService =
+    options.providerCenterService ??
+    createProviderCenterService({
+      storage: createProviderCenterStorage({
+        dataFile: options.providerCenterDataFile ?? join(process.cwd(), 'logs', 'provider-center.json'),
+        env,
+      }),
+      discoverModelsForProfile,
+      checkProfileHealth,
+    });
   const logger =
     options.translationRunLogger ??
     createTranslationRunLogger({
@@ -232,6 +309,29 @@ export function createAppHandler(options = {}) {
         return;
       }
 
+      if (request.method === 'GET' && url.pathname === '/api/provider-center') {
+        sendJson(response, 200, await providerCenterService.read());
+        return;
+      }
+
+      if (request.method === 'PUT' && url.pathname === '/api/provider-center') {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, await providerCenterService.save(payload));
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/provider-center/check') {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, await providerCenterService.check(payload));
+        return;
+      }
+
+      if (request.method === 'POST' && url.pathname === '/api/provider-center/models/discover') {
+        const payload = await readJsonBody(request);
+        sendJson(response, 200, await providerCenterService.discoverModels(payload));
+        return;
+      }
+
       if (
         request.method === 'POST' &&
         url.pathname.startsWith('/api/translation-runs/') &&
@@ -248,11 +348,29 @@ export function createAppHandler(options = {}) {
         const provider = url.pathname.slice('/api/translate/'.length);
         const payload = await readJsonBody(request);
         const validated = validateTranslateRequest(provider, payload);
+        const profile = await resolveProviderProfile(
+          providerCenterService,
+          provider,
+          validated.profileId,
+        );
+        const resolvedOptions = {
+          ...buildOptionsFromProfile(profile),
+          ...validated.options,
+        };
+        const resolvedRuntimeOverrides = {
+          ...buildRuntimeOverridesFromProfile(profile),
+          ...validated.runtimeOverrides,
+        };
+
         try {
           const result = normalizeTranslateResult(
             await translateImpl(
               provider,
-              validated,
+              {
+                ...validated,
+                options: resolvedOptions,
+                runtimeOverrides: resolvedRuntimeOverrides,
+              },
               new AbortController().signal,
               { env },
             ),
@@ -266,7 +384,7 @@ export function createAppHandler(options = {}) {
               request: {
                 texts: validated.texts,
                 contextTexts: validated.contextTexts,
-                options: validated.options,
+                options: resolvedOptions,
               },
               response: {
                 translations: result.translations,
@@ -295,7 +413,7 @@ export function createAppHandler(options = {}) {
               request: {
                 texts: validated.texts,
                 contextTexts: validated.contextTexts,
-                options: validated.options,
+                options: resolvedOptions,
               },
               response: null,
               fillMapping: validated.texts.map((text, index) => ({
@@ -341,6 +459,7 @@ export function createAppHandler(options = {}) {
           '运行汇总格式无效',
           '运行错误格式无效',
           '运行标识格式无效',
+          'Provider Profile 标识格式无效',
           '批次元信息格式无效',
         ].includes(message) || message.startsWith('存在不允许的配置项:')
           ? 400

@@ -75,6 +75,7 @@ export async function finalizeProxyTranslationRun(
 
 export async function translateViaProxy(
   provider: ProviderId,
+  profileId: string | null,
   texts: string[],
   contextTexts: string[],
   batch: TranslationBatchMetadata,
@@ -90,6 +91,7 @@ export async function translateViaProxy(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
+      profileId: profileId ?? undefined,
       runId,
       texts,
       contextTexts,

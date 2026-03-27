@@ -38,6 +38,7 @@ describe('provider registry', () => {
     await expect(
       dispatchTranslate(
         'openai-compatible',
+        'openai-compatible-default',
         ['こんにちは'],
         [],
         {
@@ -61,6 +62,7 @@ describe('provider registry', () => {
       ),
     ).resolves.toEqual(['你好']);
 
+    expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch).toHaveBeenCalledWith(
       '/api/translate/openai-compatible',
       expect.objectContaining({
@@ -68,29 +70,31 @@ describe('provider registry', () => {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          runId: 'run-123',
-          texts: ['こんにちは'],
-          contextTexts: [],
-          batch: {
-            kind: 'translate',
-            sequence: 1,
-            startIndex: 0,
-            endIndex: 0,
-            totalEntries: 1,
-          },
-          options: {
-            model: 'gpt-4o-mini',
-            temperature: '0.2',
-            disableThinking: 'true',
-          },
-          runtimeOverrides: {
-            apiEndpoint: 'https://runtime-openai.example/v1',
-            apiKey: 'runtime-openai-key',
-          },
-        }),
       }),
     );
+    const [, requestInit] = vi.mocked(fetch).mock.calls[0];
+    expect(JSON.parse(String(requestInit?.body))).toEqual({
+      profileId: 'openai-compatible-default',
+      runId: 'run-123',
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: {
+        kind: 'translate',
+        sequence: 1,
+        startIndex: 0,
+        endIndex: 0,
+        totalEntries: 1,
+      },
+      options: {
+        model: 'gpt-4o-mini',
+        temperature: '0.2',
+        disableThinking: 'true',
+      },
+      runtimeOverrides: {
+        apiEndpoint: 'https://runtime-openai.example/v1',
+        apiKey: 'runtime-openai-key',
+      },
+    });
   });
 
   it('creates and finalizes translation runs through the local proxy endpoint', async () => {
@@ -117,6 +121,7 @@ describe('provider registry', () => {
         {
           fileName: 'sample.srt',
           provider: 'openai-compatible',
+          profileId: undefined,
           totalEntries: 1,
           entries: [
             {

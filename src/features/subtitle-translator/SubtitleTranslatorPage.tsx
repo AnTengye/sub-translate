@@ -1,17 +1,21 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
 import { createAppProviderRuntimeSeeds } from '../../lib/config/env';
 import { serializeSrt } from '../../lib/subtitle/srt';
-import { AdvancedConfigPanel } from './components/AdvancedConfigPanel';
+import { ProviderCenter } from './components/ProviderCenter';
 import { ProviderPanel } from './components/ProviderPanel';
 import { ResultToolbar } from './components/ResultToolbar';
 import { SubtitleList } from './components/SubtitleList';
 import { TranslationPanel } from './components/TranslationPanel';
 import { UploadScreen } from './components/UploadScreen';
 import {
+  checkProviderProfile,
+  discoverProviderProfileModels,
+  fetchProviderCenterState,
+  saveProviderCenterState,
+  type ProviderCenterProfile,
+} from './provider-center-api';
+import {
   createDefaultProviderProfiles,
-  providerProfilesStorageKey,
-  saveProviderProfiles,
-  type ProviderRuntimeSeeds,
 } from './config-storage';
 import { useFileImport } from './hooks/useFileImport';
 import { useTranslationController } from './hooks/useTranslationController';
@@ -44,31 +48,19 @@ export default function SubtitleTranslatorPage() {
   const translationController = useTranslationController(state, dispatch);
 
   useEffect(() => {
-    if (window.localStorage.getItem(providerProfilesStorageKey)) {
-      return;
-    }
-
     let active = true;
-
-    fetch('/api/provider-profiles/defaults')
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`failed to load defaults ${response.status}`);
-        }
-
-        return (await response.json()) as ProviderRuntimeSeeds;
-      })
-      .then((runtimeSeeds) => {
-        if (!active || window.localStorage.getItem(providerProfilesStorageKey)) {
+    fetchProviderCenterState()
+      .then((providerCenter) => {
+        if (!active) {
           return;
         }
 
-        const providerProfiles = createDefaultProviderProfiles(runtimeSeeds);
-        saveProviderProfiles(providerProfiles);
+        dispatch({ type: 'hydrateProviderCenter', providerCenter });
+        const providerProfiles = createDefaultProviderProfiles(createAppProviderRuntimeSeeds());
         dispatch({ type: 'replaceProviderProfiles', providerProfiles });
       })
       .catch(() => {
-        if (!active || window.localStorage.getItem(providerProfilesStorageKey)) {
+        if (!active) {
           return;
         }
 
@@ -122,11 +114,23 @@ export default function SubtitleTranslatorPage() {
     dispatch({ type: 'setFilter', filter: 'all' });
   }
 
-  function handleSaveProviderProfiles(providerProfiles: Parameters<typeof saveProviderProfiles>[0]) {
-    saveProviderProfiles(providerProfiles);
-    dispatch({ type: 'replaceProviderProfiles', providerProfiles });
+  async function handleSaveProviderCenter(nextProviderCenter: Parameters<typeof saveProviderCenterState>[0]) {
+    const saved = await saveProviderCenterState(nextProviderCenter);
+    dispatch({ type: 'hydrateProviderCenter', providerCenter: saved });
     setSaveMessage('已保存，将用于后续新任务');
     setIsAdvancedConfigOpen(false);
+  }
+
+  async function handleCheckProviderProfile(family: typeof state.provider, profileId: string) {
+    const result = await checkProviderProfile(family, profileId);
+    setSaveMessage(result.summary);
+    return result.profile as ProviderCenterProfile;
+  }
+
+  async function handleDiscoverProviderModels(family: typeof state.provider, profileId: string) {
+    const result = await discoverProviderProfileModels(family, profileId);
+    setSaveMessage(result.summary);
+    return result.profile as ProviderCenterProfile;
   }
 
   if (state.step === 'upload') {
@@ -229,13 +233,15 @@ export default function SubtitleTranslatorPage() {
         </TranslationPanel>
       </div>
 
-      <AdvancedConfigPanel
+      <ProviderCenter
         isOpen={isAdvancedConfigOpen}
-        providerProfiles={state.providerProfiles}
+        providerCenter={state.providerCenter}
         initialProvider={state.provider}
         disableSave={busy}
         onClose={() => setIsAdvancedConfigOpen(false)}
-        onSave={handleSaveProviderProfiles}
+        onSave={handleSaveProviderCenter}
+        onCheck={handleCheckProviderProfile}
+        onDiscoverModels={handleDiscoverProviderModels}
       />
     </main>
   );

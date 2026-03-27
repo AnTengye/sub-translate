@@ -201,6 +201,102 @@ describe('createAppServer', () => {
     await app.close();
   });
 
+  it('resolves translation provider config from the server-managed active profile', async () => {
+    const translateImpl = vi.fn().mockResolvedValue(['你好']);
+    const app = await startServer({
+      distDir: join(process.cwd(), 'dist'),
+      translateImpl,
+      providerCenterService: {
+        read: vi.fn().mockResolvedValue({
+          version: 1,
+          defaultProvider: 'openai-compatible',
+          families: {
+            'openai-compatible': {
+              id: 'openai-compatible',
+              label: 'OpenAI Compatible',
+              description: '',
+              activeProfileId: 'openai-compatible-default',
+              profiles: [
+                {
+                  id: 'openai-compatible-default',
+                  family: 'openai-compatible',
+                  name: 'Default OpenAI',
+                  enabled: true,
+                  isDefault: true,
+                  connection: {
+                    apiEndpoint: 'https://server-openai.example/v1',
+                    apiKey: 'server-key',
+                  },
+                  settings: {
+                    model: 'server-model',
+                    disableThinking: 'true',
+                  },
+                  capabilities: {},
+                  models: [],
+                  modelDiscovery: {},
+                  health: {},
+                },
+              ],
+            },
+            'claude-compatible': {
+              id: 'claude-compatible',
+              label: 'Claude Compatible',
+              description: '',
+              activeProfileId: 'claude-compatible-default',
+              profiles: [],
+            },
+            baidu: {
+              id: 'baidu',
+              label: 'Baidu',
+              description: '',
+              activeProfileId: 'baidu-default',
+              profiles: [],
+            },
+          },
+        }),
+      },
+      env: {
+        NODE_ENV: 'test',
+      },
+    });
+
+    const response = await fetch(`${app.baseUrl}/api/translate/openai-compatible`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        texts: ['こんにちは'],
+        contextTexts: [],
+        profileId: 'openai-compatible-default',
+        options: {
+          temperature: 0.2,
+        },
+      }),
+    });
+
+    expect(response.status).toBe(200);
+    expect(translateImpl).toHaveBeenCalledWith(
+      'openai-compatible',
+      expect.objectContaining({
+        profileId: 'openai-compatible-default',
+        options: {
+          model: 'server-model',
+          disableThinking: 'true',
+          temperature: 0.2,
+        },
+        runtimeOverrides: {
+          apiEndpoint: 'https://server-openai.example/v1',
+          apiKey: 'server-key',
+        },
+      }),
+      expect.any(AbortSignal),
+      { env: { NODE_ENV: 'test' } },
+    );
+
+    await app.close();
+  });
+
   it('returns provider runtime default seeds for the advanced config panel', async () => {
     const app = await startServer({
       distDir: join(process.cwd(), 'dist'),

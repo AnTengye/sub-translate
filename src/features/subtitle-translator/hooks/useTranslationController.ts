@@ -110,6 +110,7 @@ export function useTranslationController(
       {
         fileName: state.fileName,
         provider: state.provider,
+        profileId: state.activeProfileId ?? undefined,
         totalEntries: state.entries.length,
         entries: state.entries.map((entry) => ({
           idx: entry.idx,
@@ -181,6 +182,7 @@ export function useTranslationController(
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
           dispatchTranslateWithProvider(
             state.provider,
+            state.activeProfileId,
             texts,
             contextTexts,
             batch,
@@ -248,6 +250,7 @@ export function useTranslationController(
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
           dispatchTranslateWithProvider(
             state.provider,
+            state.activeProfileId,
             texts,
             contextTexts,
             batch,
@@ -304,6 +307,7 @@ export function useTranslationController(
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
           dispatchTranslateWithProvider(
             state.provider,
+            state.activeProfileId,
             texts,
             contextTexts,
             batch,

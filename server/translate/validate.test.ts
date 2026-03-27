@@ -182,13 +182,37 @@ describe('validateTranslateRequest', () => {
     expect(
       validateTranslateRequest('openai-compatible', {
         texts: ['こんにちは'],
+        profileId: 'openai-compatible-default',
       }),
     ).toEqual({
       runId: undefined,
+      profileId: 'openai-compatible-default',
       texts: ['こんにちは'],
       contextTexts: [],
       batch: undefined,
       options: {},
+      runtimeOverrides: {},
+    });
+  });
+
+  it('accepts an optional profile id for server-managed provider resolution', () => {
+    expect(
+      validateTranslateRequest('openai-compatible', {
+        texts: ['こんにちは'],
+        profileId: 'openai-compatible-default',
+        options: {
+          temperature: 0.2,
+        },
+      }),
+    ).toEqual({
+      runId: undefined,
+      profileId: 'openai-compatible-default',
+      texts: ['こんにちは'],
+      contextTexts: [],
+      batch: undefined,
+      options: {
+        temperature: 0.2,
+      },
       runtimeOverrides: {},
     });
   });

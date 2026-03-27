@@ -13,6 +13,7 @@ import {
   type ProviderProfileStorageData,
   updateActiveProviderProfileConfig,
 } from '../config-storage';
+import type { ProviderCenterProfile, ProviderCenterStateData } from '../provider-center-api';
 
 type ProviderId = SubtitleTranslatorState['provider'];
 
@@ -21,6 +22,7 @@ export type SubtitleTranslatorAction =
   | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
   | { type: 'setProvider'; provider: ProviderId }
+  | { type: 'hydrateProviderCenter'; providerCenter: ProviderCenterStateData }
   | { type: 'replaceProviderProfiles'; providerProfiles: ProviderProfileStorageData }
   | { type: 'updateProviderConfig'; key: string; value: string }
   | { type: 'updateTranslationConfig'; key: keyof TranslationConfig; value: number }
@@ -48,6 +50,34 @@ function getActiveProviderConfig(
   return activeProfile ? { ...activeProfile.config } : {};
 }
 
+function getActiveServerProfile(
+  providerCenter: ProviderCenterStateData | null,
+  provider: ProviderId,
+): ProviderCenterProfile | null {
+  const family = providerCenter?.families[provider];
+  if (!family) {
+    return null;
+  }
+
+  return family.profiles.find((profile) => profile.id === family.activeProfileId) ?? null;
+}
+
+function getServerBackedProviderConfig(
+  providerCenter: ProviderCenterStateData | null,
+  provider: ProviderId,
+  fallbackProfiles: ProviderProfileStorageData,
+): Record<string, string> {
+  const activeProfile = getActiveServerProfile(providerCenter, provider);
+  if (!activeProfile) {
+    return getActiveProviderConfig(fallbackProfiles, provider);
+  }
+
+  return {
+    ...activeProfile.connection,
+    ...activeProfile.settings,
+  };
+}
+
 export function createInitialState(
   providerProfiles = loadProviderProfiles(createAppProviderRuntimeSeeds()),
 ): SubtitleTranslatorState {
@@ -59,8 +89,10 @@ export function createInitialState(
     entries: [],
     display: [],
     provider,
+    activeProfileId: null,
+    providerCenter: null,
     providerProfiles,
-    providerConfig: getActiveProviderConfig(providerProfiles, provider),
+    providerConfig: getServerBackedProviderConfig(null, provider, providerProfiles),
     translationConfig: {
       batchSize: 20,
       contextLines: 3,
@@ -105,13 +137,35 @@ export function subtitleTranslatorReducer(
       return {
         ...state,
         provider: action.provider,
-        providerConfig: getActiveProviderConfig(state.providerProfiles, action.provider),
+        activeProfileId: state.providerCenter?.families[action.provider]?.activeProfileId ?? null,
+        providerConfig: getServerBackedProviderConfig(
+          state.providerCenter,
+          action.provider,
+          state.providerProfiles,
+        ),
+      };
+    case 'hydrateProviderCenter':
+      return {
+        ...state,
+        providerCenter: action.providerCenter,
+        provider: action.providerCenter.defaultProvider,
+        activeProfileId:
+          action.providerCenter.families[action.providerCenter.defaultProvider]?.activeProfileId ?? null,
+        providerConfig: getServerBackedProviderConfig(
+          action.providerCenter,
+          action.providerCenter.defaultProvider,
+          state.providerProfiles,
+        ),
       };
     case 'replaceProviderProfiles':
       return {
         ...state,
         providerProfiles: action.providerProfiles,
-        providerConfig: getActiveProviderConfig(action.providerProfiles, state.provider),
+        providerConfig: getServerBackedProviderConfig(
+          state.providerCenter,
+          state.provider,
+          action.providerProfiles,
+        ),
       };
     case 'updateProviderConfig':
       return {

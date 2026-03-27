@@ -50,7 +50,7 @@ export function validateTranslateRequest(provider, payload) {
     throw new Error('请求体格式无效');
   }
 
-  const { runId, texts, contextTexts = [], batch, options = {}, runtimeOverrides = {} } = payload;
+  const { runId, profileId, texts, contextTexts = [], batch, options = {}, runtimeOverrides = {} } = payload;
 
   if (!isStringArray(texts) || texts.length === 0) {
     throw new Error('至少提供一条待翻译字幕');
@@ -58,6 +58,10 @@ export function validateTranslateRequest(provider, payload) {
 
   if (runId !== undefined && typeof runId !== 'string') {
     throw new Error('运行标识格式无效');
+  }
+
+  if (profileId !== undefined && typeof profileId !== 'string') {
+    throw new Error('Provider Profile 标识格式无效');
   }
 
   if (!isStringArray(contextTexts)) {
@@ -90,6 +94,7 @@ export function validateTranslateRequest(provider, payload) {
 
   return {
     runId,
+    profileId,
     texts,
     contextTexts,
     batch,
