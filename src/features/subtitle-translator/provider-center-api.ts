@@ -30,6 +30,7 @@ export interface ProviderCenterProfile {
     lastCheckedAt: string | null;
     error: string | null;
   };
+  availableModels?: ProviderCenterModel[];
 }
 
 export interface ProviderCenterFamily {
@@ -94,7 +95,7 @@ export async function checkProviderProfile(
   return data as { profile: ProviderCenterProfile; status: string; summary: string; error: string | null };
 }
 
-export async function discoverProviderProfileModels(
+export async function fetchProviderProfileModelCatalog(
   family: ProviderId,
   profileId: string,
 ): Promise<{ profile: ProviderCenterProfile; models: ProviderCenterModel[]; summary: string }> {
@@ -111,3 +112,5 @@ export async function discoverProviderProfileModels(
   }
   return data as { profile: ProviderCenterProfile; models: ProviderCenterModel[]; summary: string };
 }
+
+export const discoverProviderProfileModels = fetchProviderProfileModelCatalog;

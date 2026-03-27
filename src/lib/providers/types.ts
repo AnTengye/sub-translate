@@ -41,6 +41,7 @@ export interface ProviderRuntimeOverrides {
   apiKey?: string;
   appId?: string;
   secretKey?: string;
+  providerLabel?: string;
 }
 
 export interface TranslationRunCreatePayload {

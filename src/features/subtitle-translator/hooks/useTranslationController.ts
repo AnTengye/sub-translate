@@ -67,6 +67,7 @@ function buildRuntimeOverrides(state: SubtitleTranslatorState): ProviderRuntimeO
       return {
         apiEndpoint: state.providerConfig.apiEndpoint || undefined,
         apiKey: state.providerConfig.apiKey || undefined,
+        providerLabel: state.providerConfig.providerLabel || undefined,
       };
     case 'baidu':
       return {

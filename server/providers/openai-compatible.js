@@ -4,6 +4,19 @@ function normalizeModelName(model) {
   return String(model || '').trim().toLowerCase();
 }
 
+function normalizeEndpoint(endpoint, providerLabel) {
+  const trimmed = String(endpoint || '').trim().replace(/\/$/, '');
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (providerLabel === 'New API' && !/\/v\d+$/i.test(trimmed)) {
+    return `${trimmed}/v1`;
+  }
+
+  return trimmed;
+}
+
 function buildThinkingOverride(model, disableThinking) {
   if (disableThinking !== 'true') {
     return {};
@@ -63,11 +76,12 @@ export async function translateWithOpenAiCompatible(request, signal, deps = {}) 
     request.runtimeOverrides && typeof request.runtimeOverrides === 'object'
       ? request.runtimeOverrides
       : {};
-  const endpoint = (
+  const endpoint = normalizeEndpoint(
     runtimeOverrides.apiEndpoint ||
-    env.OPENAI_API_ENDPOINT ||
-    'https://api.openai.com/v1'
-  ).replace(/\/$/, '');
+      env.OPENAI_API_ENDPOINT ||
+      'https://api.openai.com/v1',
+    runtimeOverrides.providerLabel,
+  );
   const apiKey = runtimeOverrides.apiKey || env.OPENAI_API_KEY;
 
   if (!apiKey) {

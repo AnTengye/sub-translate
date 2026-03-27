@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react';
+import { useAsyncAction } from '../../../components/ui/feedback/useAsyncAction';
+import { useToast } from '../../../components/ui/feedback/useToast';
 import type { ProviderId } from '../../../lib/providers/types';
 import type { ProviderCenterModel, ProviderCenterProfile, ProviderCenterStateData } from '../provider-center-api';
+import { ModelManagerDialog } from './ModelManagerDialog';
 
 interface ProviderCenterProps {
   isOpen: boolean;
@@ -10,7 +13,10 @@ interface ProviderCenterProps {
   onClose: () => void;
   onSave: (draft: ProviderCenterStateData) => Promise<void> | void;
   onCheck: (family: ProviderId, profileId: string) => Promise<ProviderCenterProfile>;
-  onDiscoverModels: (family: ProviderId, profileId: string) => Promise<ProviderCenterProfile>;
+  onLoadModelCatalog: (
+    family: ProviderId,
+    profileId: string,
+  ) => Promise<{ profile: ProviderCenterProfile; models: ProviderCenterModel[]; summary: string }>;
 }
 
 type ProviderTypeOption = 'OpenAI' | 'Anthropic' | 'New API' | 'Baidu';
@@ -125,15 +131,6 @@ function providerIcon(label: ProviderTypeOption) {
     default:
       return 'P';
   }
-}
-
-function createEmptyModel(id = ''): ProviderCenterModel {
-  return {
-    id,
-    label: id,
-    enabled: true,
-    source: 'manual',
-  };
 }
 
 function buildProfileTemplate(type: ProviderTypeOption, profileId: string, name: string): ProviderCenterProfile {
@@ -278,16 +275,19 @@ export function ProviderCenter({
   onClose,
   onSave,
   onCheck,
-  onDiscoverModels,
+  onLoadModelCatalog,
 }: ProviderCenterProps) {
   const [draft, setDraft] = useState<ProviderCenterStateData | null>(providerCenter);
   const [selected, setSelected] = useState<SelectedProfileRef | null>(
     providerCenter ? getInitialSelectedProfile(providerCenter, initialProvider) : null,
   );
-  const [manualModelName, setManualModelName] = useState('');
   const [showApiKey, setShowApiKey] = useState(false);
   const [createModalOpen, setCreateModalOpen] = useState(false);
+  const [modelManagerOpen, setModelManagerOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateProviderDraft>({ name: '', type: 'OpenAI' });
+  const saveAction = useAsyncAction();
+  const checkAction = useAsyncAction();
+  const toast = useToast();
 
   useEffect(() => {
     if (!isOpen || !providerCenter) {
@@ -296,9 +296,9 @@ export function ProviderCenter({
 
     setDraft(cloneProviderCenterState(providerCenter));
     setSelected(getInitialSelectedProfile(providerCenter, initialProvider));
-    setManualModelName('');
     setShowApiKey(false);
     setCreateModalOpen(false);
+    setModelManagerOpen(false);
     setCreateDraft({ name: '', type: 'OpenAI' });
   }, [initialProvider, isOpen, providerCenter]);
 
@@ -311,6 +311,7 @@ export function ProviderCenter({
   const activeProfile = getSelectedProfile(draft, selectedRef);
   const activeTypeLabel = profileTypeLabel(activeProfile);
   const isBaidu = activeProfile.family === 'baidu';
+  const selectedModels = activeProfile.models;
   const defaultModelValue = isBaidu ? activeProfile.settings.modelType ?? '' : activeProfile.settings.model ?? '';
 
   function updateProfile(mutator: (profile: ProviderCenterProfile) => ProviderCenterProfile) {
@@ -337,31 +338,18 @@ export function ProviderCenter({
         },
       };
     });
-    setManualModelName('');
     setShowApiKey(false);
+    setModelManagerOpen(false);
   }
 
   async function handleCheck() {
-    const updated = await onCheck(selectedRef.family, activeProfile.id);
-    updateProfile(() => updated);
-  }
-
-  async function handleDiscover() {
-    const updated = await onDiscoverModels(selectedRef.family, activeProfile.id);
-    updateProfile(() => updated);
-  }
-
-  function addManualModel() {
-    const trimmed = manualModelName.trim();
-    if (!trimmed) {
-      return;
+    try {
+      const updated = await checkAction.run(() => onCheck(selectedRef.family, activeProfile.id));
+      updateProfile(() => updated);
+      toast.success(updated.health.summary);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : '检测失败');
     }
-
-    updateProfile((profile) => ({
-      ...profile,
-      models: [...profile.models, createEmptyModel(trimmed)],
-    }));
-    setManualModelName('');
   }
 
   function createProviderProfile() {
@@ -478,8 +466,13 @@ export function ProviderCenter({
                   <button className="provider-inline-button" type="button" onClick={() => setShowApiKey((value) => !value)}>
                     {showApiKey ? '隐藏' : '显示'}
                   </button>
-                  <button className="provider-inline-button provider-inline-button-primary" type="button" onClick={handleCheck}>
-                    检测
+                  <button
+                    className="provider-inline-button provider-inline-button-primary"
+                    type="button"
+                    disabled={checkAction.isPending}
+                    onClick={() => void handleCheck()}
+                  >
+                    {checkAction.isPending ? '检测中…' : '检测'}
                   </button>
                 </div>
               </div>
@@ -575,23 +568,14 @@ export function ProviderCenter({
               <div className="provider-center-section-heading">
                 <div>
                   <h4>模型</h4>
-                  <p className="provider-center-caption">{activeProfile.models.length} 个已保存模型</p>
-                </div>
-                <div className="provider-center-inline-actions">
-                  <button className="provider-inline-button" type="button">
-                    搜索
-                  </button>
-                  <button className="provider-inline-button" type="button" onClick={handleDiscover}>
-                    自动发现模型
-                  </button>
+                  <p className="provider-center-caption">{selectedModels.length} 个已添加模型</p>
                 </div>
               </div>
 
               <label className="field provider-center-model-field">
                 <span>默认模型</span>
-                <input
+                <select
                   aria-label="默认模型"
-                  type="text"
                   value={defaultModelValue}
                   onChange={(event) =>
                     updateProfile((profile) => ({
@@ -602,14 +586,24 @@ export function ProviderCenter({
                       },
                     }))
                   }
-                />
+                >
+                  {!selectedModels.some((model) => model.id === defaultModelValue) && defaultModelValue ? (
+                    <option value={defaultModelValue}>{defaultModelValue}</option>
+                  ) : null}
+                  {selectedModels.length === 0 ? <option value="">请先在管理中添加模型</option> : null}
+                  {selectedModels.map((model) => (
+                    <option key={model.id} value={model.id}>
+                      {model.label}
+                    </option>
+                  ))}
+                </select>
               </label>
 
               <div className="provider-center-model-board">
-                {activeProfile.models.length === 0 ? (
-                  <span className="muted-text">暂无模型，可自动发现或手动添加。</span>
+                {selectedModels.length === 0 ? (
+                  <span className="muted-text">暂无已添加模型。点击“管理”后从远端模型池中选择。</span>
                 ) : (
-                  activeProfile.models.map((model) => (
+                  selectedModels.map((model) => (
                     <div key={model.id} className="provider-center-model-row">
                       <div className="provider-center-model-copy">
                         <strong>{model.label}</strong>
@@ -621,22 +615,13 @@ export function ProviderCenter({
                 )}
               </div>
 
-              <div className="provider-center-model-create">
-                <input
-                  aria-label="手动模型"
-                  className="provider-center-input"
-                  value={manualModelName}
-                  onChange={(event) => setManualModelName(event.target.value)}
-                  placeholder="手动添加模型名"
-                />
-              </div>
-
               <div className="provider-center-model-footer">
-                <button className="provider-inline-button provider-inline-button-primary" type="button">
+                <button
+                  className="provider-inline-button provider-inline-button-primary"
+                  type="button"
+                  onClick={() => setModelManagerOpen(true)}
+                >
                   管理
-                </button>
-                <button className="provider-inline-button" type="button" onClick={addManualModel}>
-                  添加
                 </button>
               </div>
             </section>
@@ -714,10 +699,48 @@ export function ProviderCenter({
           <button className="ghost-button" type="button" onClick={onClose}>
             取消
           </button>
-          <button className="primary-button" type="button" disabled={disableSave} onClick={() => onSave(draft)}>
-            保存配置
+          <button
+            className="primary-button"
+            type="button"
+            disabled={disableSave || saveAction.isPending}
+            onClick={() =>
+              void saveAction.run(async () => {
+                await onSave(draft);
+              }).catch((error) => {
+                toast.error(error instanceof Error ? error.message : '保存失败');
+              })
+            }
+          >
+            {saveAction.isPending ? '保存中…' : '保存配置'}
           </button>
         </footer>
+
+        <ModelManagerDialog
+          isOpen={modelManagerOpen}
+          family={selectedRef.family}
+          profile={activeProfile}
+          onClose={() => setModelManagerOpen(false)}
+          onLoadCatalog={async (family, profileId) => {
+            const result = await onLoadModelCatalog(family, profileId);
+            updateProfile(() => result.profile);
+            toast.info(result.summary);
+            return result;
+          }}
+          onApply={(models) => {
+            updateProfile((profile) => ({
+              ...profile,
+              models,
+              settings: {
+                ...profile.settings,
+                ...(models.some((model) => model.id === defaultModelValue)
+                  ? {}
+                  : {
+                      [isBaidu ? 'modelType' : 'model']: models[0]?.id ?? '',
+                    }),
+              },
+            }));
+          }}
+        />
 
         {createModalOpen ? (
           <div className="provider-center-create-backdrop">

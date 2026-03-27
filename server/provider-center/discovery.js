@@ -13,6 +13,19 @@ function normalizeOpenAiModels(payload) {
     }));
 }
 
+function normalizeOpenAiEndpoint(endpoint, providerLabel) {
+  const trimmed = String(endpoint || '').trim().replace(/\/$/, '');
+  if (!trimmed) {
+    return trimmed;
+  }
+
+  if (providerLabel === 'New API' && !/\/v\d+$/i.test(trimmed)) {
+    return `${trimmed}/v1`;
+  }
+
+  return trimmed;
+}
+
 export async function discoverModelsForProfile(profile) {
   if (!profile.capabilities?.supportsModelDiscovery) {
     return {
@@ -23,7 +36,11 @@ export async function discoverModelsForProfile(profile) {
   }
 
   if (profile.family === 'openai-compatible') {
-    const response = await fetch(`${profile.connection.apiEndpoint.replace(/\/$/, '')}/models`, {
+    const endpoint = normalizeOpenAiEndpoint(
+      profile.connection.apiEndpoint,
+      profile.settings?.providerLabel,
+    );
+    const response = await fetch(`${endpoint}/models`, {
       method: 'GET',
       headers: {
         Authorization: `Bearer ${profile.connection.apiKey}`,

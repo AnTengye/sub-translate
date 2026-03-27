@@ -158,6 +158,8 @@ function isProfile(value) {
     isObject(value.capabilities) &&
     Array.isArray(value.models) &&
     value.models.every(isModel) &&
+    (value.availableModels === undefined ||
+      (Array.isArray(value.availableModels) && value.availableModels.every(isModel))) &&
     isObject(value.modelDiscovery) &&
     isObject(value.health)
   );

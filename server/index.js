@@ -229,6 +229,7 @@ function buildRuntimeOverridesFromProfile(profile) {
     return {
       ...(profile.connection.apiEndpoint ? { apiEndpoint: profile.connection.apiEndpoint } : {}),
       ...(profile.connection.apiKey ? { apiKey: profile.connection.apiKey } : {}),
+      ...(profile.settings.providerLabel ? { providerLabel: profile.settings.providerLabel } : {}),
     };
   }
 

@@ -49,7 +49,7 @@ export function createProviderCenterService({ storage, discoverModelsForProfile,
       const result = await discoverModelsForProfile(profile);
       const nextState = updateProfile(state, family, profileId, (current) => ({
         ...current,
-        models: result.models,
+        availableModels: result.models,
         modelDiscovery: {
           ...current.modelDiscovery,
           lastCheckedAt: new Date().toISOString(),

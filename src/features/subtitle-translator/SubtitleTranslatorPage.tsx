@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useToast } from '../../components/ui/feedback/useToast';
 import { createAppProviderRuntimeSeeds } from '../../lib/config/env';
 import { serializeSrt } from '../../lib/subtitle/srt';
 import { ProviderCenter } from './components/ProviderCenter';
@@ -9,7 +10,7 @@ import { TranslationPanel } from './components/TranslationPanel';
 import { UploadScreen } from './components/UploadScreen';
 import {
   checkProviderProfile,
-  discoverProviderProfileModels,
+  fetchProviderProfileModelCatalog,
   fetchProviderCenterState,
   saveProviderCenterState,
   type ProviderCenterProfile,
@@ -38,12 +39,12 @@ function getStageLabel(step: 'upload' | 'config' | 'translating' | 'done') {
 
 export default function SubtitleTranslatorPage() {
   const [isAdvancedConfigOpen, setIsAdvancedConfigOpen] = useState(false);
-  const [saveMessage, setSaveMessage] = useState<string | null>(null);
   const [state, dispatch] = useReducer(
     subtitleTranslatorReducer,
     undefined,
     createInitialState,
   );
+  const toast = useToast();
   const { importFile } = useFileImport(dispatch);
   const translationController = useTranslationController(state, dispatch);
 
@@ -117,20 +118,17 @@ export default function SubtitleTranslatorPage() {
   async function handleSaveProviderCenter(nextProviderCenter: Parameters<typeof saveProviderCenterState>[0]) {
     const saved = await saveProviderCenterState(nextProviderCenter);
     dispatch({ type: 'hydrateProviderCenter', providerCenter: saved });
-    setSaveMessage('已保存，将用于后续新任务');
     setIsAdvancedConfigOpen(false);
+    toast.success('已保存，将用于后续新任务');
   }
 
   async function handleCheckProviderProfile(family: typeof state.provider, profileId: string) {
     const result = await checkProviderProfile(family, profileId);
-    setSaveMessage(result.summary);
     return result.profile as ProviderCenterProfile;
   }
 
-  async function handleDiscoverProviderModels(family: typeof state.provider, profileId: string) {
-    const result = await discoverProviderProfileModels(family, profileId);
-    setSaveMessage(result.summary);
-    return result.profile as ProviderCenterProfile;
+  async function handleLoadProviderModels(family: typeof state.provider, profileId: string) {
+    return fetchProviderProfileModelCatalog(family, profileId);
   }
 
   if (state.step === 'upload') {
@@ -223,7 +221,6 @@ export default function SubtitleTranslatorPage() {
           />
 
           {state.error ? <p className="error-banner">{state.error}</p> : null}
-          {saveMessage ? <p className="save-banner">{saveMessage}</p> : null}
 
           <SubtitleList
             entries={filteredEntries}
@@ -241,7 +238,7 @@ export default function SubtitleTranslatorPage() {
         onClose={() => setIsAdvancedConfigOpen(false)}
         onSave={handleSaveProviderCenter}
         onCheck={handleCheckProviderProfile}
-        onDiscoverModels={handleDiscoverProviderModels}
+        onLoadModelCatalog={handleLoadProviderModels}
       />
     </main>
   );

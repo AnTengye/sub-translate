@@ -58,6 +58,7 @@ export function UploadScreen({ error, onFileSelected }: UploadScreenProps) {
         <span className="upload-card-hint">
           {isDragging ? '松手即可开始导入字幕' : '支持 .srt / .vtt / .sub，点击选择或直接拖拽到这里'}
         </span>
+        <span className="upload-card-button">{isDragging ? '松手开始导入' : '选择字幕文件'}</span>
         <span className="upload-card-note">导入后即可进入桌面工作区，继续配置引擎与翻译参数。</span>
         <input
           id="subtitle-file-input"
