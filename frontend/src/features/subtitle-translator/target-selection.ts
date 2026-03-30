@@ -13,6 +13,14 @@ export interface ProviderTargetOption extends ProviderTarget {
   summary: string;
 }
 
+const healthStatusLabelMap: Record<string, string> = {
+  idle: '未检查',
+  success: '有效',
+  warning: '警告',
+  error: '失败',
+  failed: '失败',
+};
+
 function isHealthyProfile(profile: ProviderCenterProfile) {
   return profile.enabled && profile.health.status === 'success';
 }
@@ -23,6 +31,42 @@ export function getEnabledModels(profile: ProviderCenterProfile) {
 
 function getProfileProviderLabel(profile: ProviderCenterProfile) {
   return profile.settings.providerLabel || profile.family;
+}
+
+export function getProfileHealthLabel(profile: Pick<ProviderCenterProfile, 'health'>) {
+  const mapped = healthStatusLabelMap[profile.health.status];
+  if (mapped) {
+    return mapped;
+  }
+
+  const summary = profile.health.summary.trim();
+  if (summary.includes('未检查')) {
+    return '未检查';
+  }
+  if (summary.includes('可用') || summary.includes('有效') || summary.includes('通过')) {
+    return '有效';
+  }
+  if (summary.includes('警告')) {
+    return '警告';
+  }
+  if (summary.includes('失败') || summary.includes('未通过')) {
+    return '失败';
+  }
+
+  return summary || '未知';
+}
+
+export function getModelSourceLabel(source: string) {
+  if (source === 'auto') {
+    return '自动发现';
+  }
+  if (source === 'manual') {
+    return '手动添加';
+  }
+  if (source === 'mixed') {
+    return '混合';
+  }
+  return source;
 }
 
 export function buildProviderTargetOptions(
@@ -44,7 +88,7 @@ export function buildProviderTargetOptions(
         modelId: model.id,
         profileName: profile.name,
         providerLabel: getProfileProviderLabel(profile),
-        summary: profile.health.summary,
+        summary: getProfileHealthLabel(profile),
       }));
     }),
   );

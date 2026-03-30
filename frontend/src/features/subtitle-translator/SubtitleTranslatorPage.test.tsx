@@ -348,6 +348,13 @@ describe('SubtitleTranslatorPage', () => {
     expect(screen.queryByRole('button', { name: /当前 Provider/i })).not.toBeInTheDocument();
   });
 
+  it('keeps provider selection compact without duplicated sidebar summaries', async () => {
+    renderPage();
+    await importSubtitle();
+
+    expect(document.querySelector('.provider-summary')).toBeNull();
+  });
+
   it('filters sidebar provider choices to checked profiles with enabled models and supports independent selection', async () => {
     const user = userEvent.setup();
     renderPage();
@@ -358,7 +365,7 @@ describe('SubtitleTranslatorPage', () => {
     await user.click(within(screen.getByRole('listbox', { name: /主 Provider 配置 选项/i })).getByRole('option', { name: /New API Mirror/i }));
 
     await user.click(screen.getByRole('button', { name: /主 Provider 模型/i }));
-    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1 manual/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1$/i }));
 
     await user.click(screen.getByRole('button', { name: /备选 Provider 配置/i }));
     await user.click(within(screen.getByRole('listbox', { name: /备选 Provider 配置 选项/i })).getByRole('option', { name: /Claude Local/i }));
@@ -416,7 +423,20 @@ describe('SubtitleTranslatorPage', () => {
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     await user.click(within(dialog).getAllByRole('button', { name: /检测/i })[0]);
-    expect(await screen.findAllByText(/连接配置有效，可继续进行模型检查或翻译/i)).not.toHaveLength(0);
+    expect(await within(dialog).findByText('状态：有效')).toBeInTheDocument();
+  });
+
+  it('shows compact status copy in Provider Center after connectivity checks', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await importSubtitle();
+    await openProviderCenter(user);
+
+    const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
+    await user.click(within(dialog).getAllByRole('button', { name: /检测/i })[0]);
+
+    expect(await within(dialog).findByText('状态：有效')).toBeInTheDocument();
+    expect(within(dialog).queryByText(/连接配置有效，可继续进行模型检查或翻译/i)).not.toBeInTheDocument();
   });
 
   it('sends the unsaved endpoint and api key when checking a provider profile', async () => {
@@ -494,6 +514,25 @@ describe('SubtitleTranslatorPage', () => {
     expect(await within(modelDialog).findByText(/发现 2 个模型/i)).toBeInTheDocument();
     expect(within(modelDialog).getByLabelText('gpt-4.1-mini')).toBeInTheDocument();
     expect(within(modelDialog).getByLabelText('gpt-4.1')).toBeInTheDocument();
+
+    const gptMiniRow = within(modelDialog)
+      .getAllByRole('button')
+      .find((button) => button.textContent?.includes('gpt-4.1-mini'));
+    expect(gptMiniRow?.textContent?.match(/gpt-4\.1-mini/g)).toHaveLength(1);
+    expect(gptMiniRow?.textContent).not.toMatch(/\bauto\b/i);
+  });
+
+  it('renders the activity console as a collapsible panel', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await importSubtitle();
+
+    const toggle = screen.getByRole('button', { name: /展开日志/i });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    await user.click(toggle);
+
+    expect(screen.getByRole('button', { name: /收起日志/i })).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('uses the selected primary target runtime when starting translation', async () => {
@@ -504,7 +543,7 @@ describe('SubtitleTranslatorPage', () => {
     await user.click(screen.getByRole('button', { name: /主 Provider 配置/i }));
     await user.click(within(screen.getByRole('listbox', { name: /主 Provider 配置 选项/i })).getByRole('option', { name: /New API Mirror/i }));
     await user.click(screen.getByRole('button', { name: /主 Provider 模型/i }));
-    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1-mini manual/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1-mini$/i }));
     await user.click(screen.getByRole('button', { name: /开始翻译/i }));
 
     await waitFor(() => {

@@ -207,6 +207,8 @@ select:focus-visible {
   display: grid;
   grid-template-columns: 260px 1fr;
   min-height: calc(100vh - 75px);
+  height: calc(100vh - 75px);
+  align-items: stretch;
   position: relative;
   z-index: 1;
 }
@@ -218,6 +220,9 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
 }
 
 .sidebar-section {
@@ -226,9 +231,9 @@ select:focus-visible {
 
 .sidebar-card {
   position: relative;
-  padding: 16px;
+  padding: 14px;
   border: 1px solid var(--border);
-  border-radius: 16px;
+  border-radius: 14px;
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.16);
 }
@@ -248,7 +253,7 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   background: rgba(255, 255, 255, 0.03);
   border: 1px solid var(--border);
   border-radius: 10px;
@@ -279,15 +284,19 @@ select:focus-visible {
 .advanced-params-anchor {
   position: relative;
   margin-top: 10px;
+  display: flex;
+  justify-content: flex-start;
 }
 
 .advanced-params-button {
-  width: 100%;
+  width: auto;
+  min-height: 36px;
   border: 1px solid var(--border-accent);
-  border-radius: 10px;
+  border-radius: 999px;
   background: rgba(99, 210, 190, 0.08);
   color: var(--accent);
-  padding: 11px 14px;
+  padding: 8px 12px;
+  font-size: 12px;
   font-weight: 600;
 }
 
@@ -295,7 +304,8 @@ select:focus-visible {
   position: absolute;
   top: calc(100% + 10px);
   left: 0;
-  right: 0;
+  right: auto;
+  width: min(320px, calc(100vw - 48px));
   z-index: 20;
   border: 1px solid var(--border-accent);
   border-radius: 16px;
@@ -317,27 +327,11 @@ select:focus-visible {
   margin-bottom: 0;
 }
 
-.provider-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 6px;
-  border-top: 1px solid var(--border);
-  padding-top: 12px;
-  color: var(--text-1);
-  font-size: 12px;
-}
-
-.provider-summary strong {
-  color: var(--text-0);
-  font-size: 14px;
-}
-
 .selector {
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  margin-bottom: 14px;
+  gap: 6px;
+  margin-bottom: 12px;
   position: relative;
 }
 
@@ -347,12 +341,12 @@ select:focus-visible {
 
 .selector-label {
   color: var(--text-1);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .selector-trigger {
   width: 100%;
-  min-height: 48px;
+  min-height: 42px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 12px;
   background: var(--bg-2);
@@ -361,7 +355,7 @@ select:focus-visible {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  padding: 12px 14px;
+  padding: 10px 12px;
   text-align: left;
 }
 
@@ -374,15 +368,22 @@ select:focus-visible {
 
 .selector-trigger-copy strong,
 .selector-option strong {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--text-0);
 }
 
 .selector-trigger-copy span,
 .selector-option span,
 .selector-empty {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--text-1);
+}
+
+.selector-trigger-copy span,
+.selector-option span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .selector-trigger-icon {
@@ -398,10 +399,10 @@ select:focus-visible {
   z-index: 18;
   display: flex;
   flex-direction: column;
-  gap: 8px;
-  max-height: 260px;
+  gap: 6px;
+  max-height: 240px;
   overflow-y: auto;
-  padding: 10px;
+  padding: 8px;
   border: 1px solid var(--border-accent);
   border-radius: 14px;
   background: rgba(10, 13, 20, 0.98);
@@ -417,7 +418,7 @@ select:focus-visible {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 10px 12px;
+  padding: 8px 10px;
   text-align: left;
 }
 
@@ -563,12 +564,14 @@ select:focus-visible {
 }
 
 .content {
-  padding: 24px 28px;
+  padding: 24px;
   display: flex;
   flex-direction: column;
   gap: 20px;
   overflow-y: auto;
-  max-height: calc(100vh - 75px);
+  min-height: 0;
+  height: 100%;
+  max-height: none;
 }
 
 .log-panel {
@@ -576,6 +579,9 @@ select:focus-visible {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  min-height: 136px;
 }
 
 .log-header {
@@ -607,29 +613,43 @@ select:focus-visible {
 }
 
 .log-toggle {
+  border: none;
+  background: transparent;
+  padding: 0;
   font-size: 11px;
-  color: var(--text-2);
+  color: var(--text-1);
   font-family: var(--font-mono);
 }
 
 .log-body {
-  padding: 12px 16px;
+  padding: 12px 14px;
   font-family: var(--font-mono);
-  font-size: 11.5px;
-  line-height: 1.8;
-  max-height: 80px;
-  overflow: hidden;
+  font-size: 12px;
+  line-height: 1.6;
+  max-height: 132px;
+  overflow: auto;
   color: var(--text-2);
+}
+
+.log-body.expanded {
+  max-height: min(42vh, 360px);
 }
 
 .log-line {
   display: flex;
   gap: 10px;
+  align-items: flex-start;
 }
 
 .log-time {
   color: var(--text-2);
   min-width: 64px;
+}
+
+.log-msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 
 .log-msg.ok {
@@ -1161,7 +1181,6 @@ select:focus-visible {
 .provider-center-shell,
 .provider-center-model-dialog,
 .provider-center-create-modal {
-  width: min(1180px, 100%);
   max-height: calc(100vh - 48px);
   overflow: auto;
   border: 1px solid var(--border);
@@ -1174,6 +1193,18 @@ select:focus-visible {
 .provider-center-model-dialog,
 .provider-center-create-modal {
   padding: 20px;
+}
+
+.provider-center-shell {
+  width: min(1180px, 100%);
+}
+
+.provider-center-model-dialog {
+  width: min(900px, 100%);
+}
+
+.provider-center-create-modal {
+  width: min(520px, 100%);
 }
 
 .provider-center-header,
@@ -1196,8 +1227,9 @@ select:focus-visible {
 
 .provider-center-layout {
   display: grid;
-  grid-template-columns: 280px 1fr;
+  grid-template-columns: 280px minmax(0, 1fr);
   gap: 18px;
+  align-items: stretch;
 }
 
 .provider-center-saved-list,
@@ -1216,12 +1248,32 @@ select:focus-visible {
   padding: 16px;
 }
 
+.provider-center-saved-list,
+.provider-center-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  min-height: 0;
+}
+
 .provider-center-saved-scroll,
 .provider-center-model-board,
 .provider-center-catalog-list {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  min-height: 0;
+}
+
+.provider-center-saved-scroll,
+.provider-center-model-board,
+.provider-center-model-dialog-body,
+.provider-center-catalog-list {
+  overflow: auto;
+}
+
+.provider-center-saved-scroll {
+  flex: 1;
 }
 
 .provider-center-provider-icon,
@@ -1254,7 +1306,7 @@ select:focus-visible {
 .provider-center-saved-item,
 .provider-center-catalog-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 12px;
   width: 100%;
   padding: 12px 14px;
@@ -1267,15 +1319,26 @@ select:focus-visible {
 }
 
 .provider-center-saved-copy,
+.provider-center-catalog-copy,
 .provider-center-model-copy {
   display: flex;
   flex-direction: column;
   gap: 4px;
+  min-width: 0;
+  flex: 1;
 }
 
 .provider-center-saved-name,
 .provider-center-editor-title-row h3 {
   font-weight: 700;
+}
+
+.provider-center-saved-status {
+  font-size: 11px;
+  color: var(--text-2);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .provider-center-type-badge,
@@ -1344,13 +1407,41 @@ select:focus-visible {
 .ghost-button,
 .provider-center-add-button,
 .provider-close-button {
-  padding: 10px 14px;
+  min-height: 36px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+}
+
+.provider-close-button,
+.ghost-button {
+  background: transparent;
+  color: var(--text-1);
 }
 
 .primary-button {
   background: linear-gradient(135deg, var(--accent), #3baed6);
   color: #071014;
   border: none;
+}
+
+.provider-center-add-button {
+  width: 100%;
+}
+
+.provider-center-model-dialog-toolbar .provider-center-search {
+  flex: 1;
+}
+
+.provider-center-model-dialog-footer,
+.provider-center-create-footer,
+.provider-center-footer,
+.provider-center-model-footer {
+  justify-content: flex-end;
+  flex-wrap: wrap;
 }
 
 .provider-center-model-row,
@@ -1363,6 +1454,16 @@ select:focus-visible {
   border-radius: 12px;
   padding: 10px 12px;
   background: var(--bg-2);
+}
+
+.provider-center-model-status {
+  flex-shrink: 0;
+  align-self: center;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-1);
 }
 
 .toast-stack {

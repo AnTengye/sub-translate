@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import type { TranslationLogEntry } from '../types';
 
 interface ActivityConsoleProps {
@@ -17,7 +18,8 @@ function getMessageTone(message: string) {
 }
 
 export function ActivityConsole({ logs }: ActivityConsoleProps) {
-  const visibleLogs = logs.slice(-3);
+  const [expanded, setExpanded] = useState(false);
+  const visibleLogs = expanded ? logs : logs.slice(-3);
 
   return (
     <div className="log-panel">
@@ -26,9 +28,20 @@ export function ActivityConsole({ logs }: ActivityConsoleProps) {
           <div className="rec-dot" />
           实时运行日志
         </div>
-        <span className="log-toggle">▾ 展开</span>
+        <button
+          className="log-toggle"
+          type="button"
+          aria-expanded={expanded}
+          aria-controls="activity-console-body"
+          onClick={() => setExpanded((current) => !current)}
+        >
+          {expanded ? '▴ 收起日志' : '▾ 展开日志'}
+        </button>
       </div>
-      <div className="log-body">
+      <div
+        id="activity-console-body"
+        className={`log-body${expanded ? ' expanded' : ''}`}
+      >
         {visibleLogs.length === 0 ? (
           <div className="log-line">
             <span className="log-time">--:--:--</span>

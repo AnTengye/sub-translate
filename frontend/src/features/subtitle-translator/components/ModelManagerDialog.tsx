@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAsyncAction } from '../../../components/ui/feedback/useAsyncAction';
 import type { ProviderId } from '../../../lib/providers/types';
 import type { ProviderCenterModel, ProviderCenterProfile } from '../provider-center-api';
+import { getModelSourceLabel } from '../target-selection';
 
 interface ModelManagerDialogProps {
   isOpen: boolean;
@@ -80,13 +81,17 @@ export function ModelManagerDialog({
     onClose();
   }
 
+  function shouldRenderModelId(model: ProviderCenterModel) {
+    return model.id.trim().toLowerCase() !== model.label.trim().toLowerCase();
+  }
+
   return (
     <div className="provider-center-create-backdrop">
       <section className="provider-center-model-dialog" role="dialog" aria-label="模型管理" aria-modal="true">
         <header className="provider-center-model-dialog-header">
           <div>
             <h3>模型管理</h3>
-            <p className="provider-center-caption">从模型提供商返回的全量模型池中选择要加入当前配置的模型。</p>
+            <p className="provider-center-caption">从远端模型列表中选择要启用的模型。</p>
           </div>
           <button className="provider-close-button" type="button" onClick={onClose}>
             关闭
@@ -150,9 +155,9 @@ export function ModelManagerDialog({
                       </span>
                       <div className="provider-center-catalog-copy">
                         <strong>{model.label}</strong>
-                        <span>{model.id}</span>
+                        {shouldRenderModelId(model) ? <span>{model.id}</span> : null}
                       </div>
-                      <span className="provider-center-model-status">{model.source}</span>
+                      <span className="provider-center-model-status">{getModelSourceLabel(model.source)}</span>
                     </button>
                   ))}
                 </div>
@@ -166,7 +171,7 @@ export function ModelManagerDialog({
             取消
           </button>
           <button className="primary-button" type="button" onClick={applySelection}>
-            添加到当前配置
+            添加
           </button>
         </footer>
       </section>

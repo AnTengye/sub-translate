@@ -3,6 +3,7 @@ import { useAsyncAction } from '../../../components/ui/feedback/useAsyncAction';
 import { useToast } from '../../../components/ui/feedback/useToast';
 import type { ProviderId } from '../../../lib/providers/types';
 import type { ProviderCenterModel, ProviderCenterProfile, ProviderCenterStateData } from '../provider-center-api';
+import { getModelSourceLabel, getProfileHealthLabel } from '../target-selection';
 import { ModelManagerDialog } from './ModelManagerDialog';
 
 interface ProviderCenterProps {
@@ -114,7 +115,7 @@ function buildFlatProfiles(providerCenter: ProviderCenterStateData): FlatProfile
       name: profile.name,
       typeLabel: profileTypeLabel(profile),
       enabled: profile.enabled,
-      summary: profile.health.summary,
+      summary: getProfileHealthLabel(profile),
     })),
   );
 }
@@ -347,7 +348,7 @@ export function ProviderCenter({
     try {
       const updated = await checkAction.run(() => onCheck(selectedRef.family, activeProfile.id, activeProfile));
       updateProfile(() => updated);
-      toast.success(updated.health.summary);
+      toast.success(`状态：${getProfileHealthLabel(updated)}`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : '检测失败');
     }
@@ -393,7 +394,7 @@ export function ProviderCenter({
           <div>
             <p className="section-kicker">Provider Center</p>
             <h2>Provider Center</h2>
-            <p className="muted-text">统一管理已保存配置，保存后后续任务会使用新配置。</p>
+            <p className="muted-text">管理配置，保存后用于新任务。</p>
           </div>
           <button className="provider-close-button" type="button" onClick={onClose}>
             关闭
@@ -439,7 +440,7 @@ export function ProviderCenter({
                   <h3>{activeProfile.name}</h3>
                   <span className="provider-center-type-badge">{activeTypeLabel}</span>
                 </div>
-                <p className="muted-text">状态：{activeProfile.health.summary}</p>
+                <p className="muted-text">状态：{getProfileHealthLabel(activeProfile)}</p>
               </div>
 
               <label className="provider-center-toggle">
@@ -608,7 +609,7 @@ export function ProviderCenter({
                     <div key={model.id} className="provider-center-model-row">
                       <div className="provider-center-model-copy">
                         <strong>{model.label}</strong>
-                        <span>{model.source}</span>
+                        <span>{getModelSourceLabel(model.source)}</span>
                       </div>
                       <div className="provider-center-model-status">{model.enabled ? '可用' : '停用'}</div>
                     </div>

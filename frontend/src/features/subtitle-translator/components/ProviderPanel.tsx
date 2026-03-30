@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState, type Dispatch } from 'react';
-import { buildProviderTargetOptions, getProfileByTarget, getEnabledModels, type ProviderTarget } from '../target-selection';
+import {
+  buildProviderTargetOptions,
+  getEnabledModels,
+  getProfileByTarget,
+  getProfileHealthLabel,
+  type ProviderTarget,
+} from '../target-selection';
 import type { SubtitleTranslatorAction } from '../state/reducer';
 import type { SubtitleTranslatorState } from '../types';
 
@@ -132,7 +138,7 @@ export function ProviderPanel({ state, dispatch, onStart }: ProviderPanelProps) 
       return {
         value: profile.id,
         label: profile.name,
-        description: `${profile.settings.providerLabel || profile.family} · ${profile.health.summary}`,
+        description: `${profile.settings.providerLabel || profile.family} · ${getProfileHealthLabel(profile)}`,
       };
     })
     .filter(Boolean) as SelectorOption[];
@@ -148,19 +154,17 @@ export function ProviderPanel({ state, dispatch, onStart }: ProviderPanelProps) 
       return {
         value: profile.id,
         label: profile.name,
-        description: `${profile.settings.providerLabel || profile.family} · ${profile.health.summary}`,
+        description: `${profile.settings.providerLabel || profile.family} · ${getProfileHealthLabel(profile)}`,
       };
     })
     .filter(Boolean) as SelectorOption[];
   const primaryModelOptions = primaryModels.map((model) => ({
     value: model.id,
     label: model.label,
-    description: model.source,
   }));
   const fallbackModelOptions = fallbackModels.map((model) => ({
     value: model.id,
     label: model.label,
-    description: model.source,
   }));
 
   function updateTarget(kind: 'primary' | 'fallback', profileId: string) {
@@ -307,10 +311,6 @@ export function ProviderPanel({ state, dispatch, onStart }: ProviderPanelProps) 
           options={primaryModelOptions}
           onSelect={(value) => updateModel('primary', value)}
         />
-        <div className="provider-summary">
-          <strong>{primaryProfile?.name ?? '未配置'}</strong>
-          <span>{state.primaryTarget?.modelId ?? '请选择模型'}</span>
-        </div>
       </div>
 
       <div className="sidebar-section sidebar-card">
@@ -331,10 +331,6 @@ export function ProviderPanel({ state, dispatch, onStart }: ProviderPanelProps) 
           options={fallbackModelOptions}
           onSelect={(value) => updateModel('fallback', value)}
         />
-        <div className="provider-summary">
-          <strong>{fallbackProfile?.name ?? '暂无可用备选'}</strong>
-          <span>{state.fallbackTarget?.modelId ?? '请先在 Provider Center 完成检测并添加模型'}</span>
-        </div>
       </div>
 
       {state.step === 'config' ? (
