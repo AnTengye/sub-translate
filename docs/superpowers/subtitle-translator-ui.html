@@ -1,0 +1,664 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SubLingo · AI 字幕翻译</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@400;500&family=Noto+Sans+SC:wght@300;400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-0: #08090d;
+    --bg-1: #0f1117;
+    --bg-2: #161820;
+    --bg-3: #1e2130;
+    --bg-card: #13151d;
+    --border: rgba(255,255,255,0.07);
+    --border-accent: rgba(99,210,190,0.3);
+    --accent: #63d2be;
+    --accent-dim: rgba(99,210,190,0.15);
+    --accent-glow: rgba(99,210,190,0.08);
+    --amber: #f5a623;
+    --amber-dim: rgba(245,166,35,0.15);
+    --red: #ff5e6d;
+    --red-dim: rgba(255,94,109,0.12);
+    --green: #4cd694;
+    --green-dim: rgba(76,214,148,0.12);
+    --text-0: #f2f4f8;
+    --text-1: #a8b0c4;
+    --text-2: #5c6480;
+    --font-display: 'Syne', sans-serif;
+    --font-mono: 'DM Mono', monospace;
+    --font-body: 'Noto Sans SC', sans-serif;
+    --radius: 12px;
+    --radius-lg: 18px;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg-0);
+    color: var(--text-0);
+    font-family: var(--font-body);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  body::before {
+    content: '';
+    position: fixed; inset: 0;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.75' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.025'/%3E%3C/svg%3E");
+    pointer-events: none; z-index: 0; opacity: .6;
+  }
+
+  .header {
+    position: relative;
+    padding: 20px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-1);
+    z-index: 10;
+  }
+
+  .logo { display: flex; align-items: center; gap: 10px; }
+
+  .logo-icon {
+    width: 34px; height: 34px;
+    background: linear-gradient(135deg, var(--accent), #3baed6);
+    border-radius: 9px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 16px;
+    box-shadow: 0 0 20px rgba(99,210,190,0.3);
+  }
+
+  .logo-text {
+    font-family: var(--font-display);
+    font-size: 20px; font-weight: 800; letter-spacing: -0.5px;
+  }
+
+  .logo-text span { color: var(--accent); }
+
+  .file-badge {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--bg-3);
+    border: 1px solid var(--border);
+    padding: 8px 16px;
+    border-radius: 99px;
+    font-family: var(--font-mono); font-size: 12px; color: var(--text-1);
+  }
+
+  .file-badge strong { color: var(--accent); font-weight: 500; }
+  .file-badge .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--text-2); }
+
+  .provider-btn {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--bg-3);
+    border: 1px solid var(--border-accent);
+    color: var(--accent);
+    padding: 9px 16px; border-radius: 99px;
+    cursor: pointer; font-family: var(--font-body); font-size: 13px; font-weight: 500;
+    transition: all 0.2s;
+  }
+
+  .provider-btn:hover { background: var(--accent-dim); box-shadow: 0 0 16px rgba(99,210,190,0.12); }
+
+  .progress-strip { width: 100%; height: 3px; background: var(--bg-3); position: relative; overflow: hidden; }
+
+  .progress-fill {
+    height: 100%; width: 68%;
+    background: linear-gradient(90deg, var(--accent), #3baed6);
+    border-radius: 99px; position: relative;
+    box-shadow: 0 0 8px var(--accent);
+    transition: width 0.5s ease;
+  }
+
+  .progress-fill::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.5), transparent);
+    animation: shimmer 1.8s linear infinite;
+  }
+
+  @keyframes shimmer {
+    from { transform: translateX(-100%); }
+    to { transform: translateX(100%); }
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    min-height: calc(100vh - 75px);
+    position: relative; z-index: 1;
+  }
+
+  .sidebar {
+    padding: 24px 20px;
+    border-right: 1px solid var(--border);
+    background: var(--bg-1);
+    display: flex; flex-direction: column; gap: 8px;
+  }
+
+  .sidebar-section { margin-bottom: 8px; }
+
+  .sidebar-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 1.2px;
+    text-transform: uppercase; color: var(--text-2);
+    margin-bottom: 10px; padding: 0 4px;
+  }
+
+  .config-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 12px;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; margin-bottom: 6px; transition: border-color 0.2s;
+  }
+
+  .config-item:hover { border-color: var(--border-accent); }
+  .config-key { font-size: 12px; color: var(--text-2); }
+
+  .config-input {
+    background: transparent; border: none;
+    font-family: var(--font-mono); font-size: 13px; color: var(--accent);
+    width: 50px; text-align: right; outline: none; cursor: pointer;
+  }
+
+  .provider-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border-accent);
+    border-radius: var(--radius); padding: 14px; margin-bottom: 6px;
+    position: relative; overflow: hidden;
+  }
+
+  .provider-card::before {
+    content: '';
+    position: absolute; top: -30px; right: -30px;
+    width: 80px; height: 80px;
+    background: radial-gradient(circle, rgba(99,210,190,0.12), transparent 70%);
+    pointer-events: none;
+  }
+
+  .provider-name {
+    font-family: var(--font-display); font-size: 15px; font-weight: 700;
+    margin-bottom: 4px; display: flex; align-items: center; gap: 8px;
+  }
+
+  .provider-model { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); margin-bottom: 12px; }
+
+  .params-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--accent-dim); border: 1px solid var(--border-accent);
+    color: var(--accent); padding: 5px 10px; border-radius: 6px;
+    font-size: 11px; cursor: pointer; transition: all 0.2s;
+  }
+
+  .params-btn:hover { background: rgba(99,210,190,0.25); }
+
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--green); box-shadow: 0 0 6px var(--green);
+    animation: pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:.4; } }
+
+  .backup-provider {
+    background: var(--bg-card);
+    border: 1px dashed rgba(255,255,255,0.1);
+    border-radius: var(--radius); padding: 12px 14px;
+    display: flex; align-items: center; justify-content: space-between;
+    cursor: pointer; transition: all 0.2s;
+  }
+
+  .backup-provider:hover { border-color: var(--border-accent); background: var(--accent-glow); }
+  .backup-label { font-size: 12px; color: var(--text-2); }
+  .backup-val { font-size: 12px; color: var(--amber); font-family: var(--font-mono); }
+
+  .content {
+    padding: 24px 28px;
+    display: flex; flex-direction: column; gap: 20px;
+    overflow-y: auto; max-height: calc(100vh - 75px);
+  }
+
+  .log-panel {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-lg); overflow: hidden;
+  }
+
+  .log-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 12px 16px; border-bottom: 1px solid var(--border); background: var(--bg-2);
+  }
+
+  .log-title {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: 0.5px;
+  }
+
+  .rec-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--red); box-shadow: 0 0 6px var(--red);
+    animation: pulse 1s ease-in-out infinite;
+  }
+
+  .log-body {
+    padding: 12px 16px; font-family: var(--font-mono); font-size: 11.5px;
+    line-height: 1.8; max-height: 80px; overflow: hidden; color: var(--text-2);
+  }
+
+  .log-line { display: flex; gap: 10px; }
+  .log-time { color: var(--text-2); min-width: 64px; }
+  .log-msg.ok { color: var(--green); }
+  .log-msg.info { color: var(--accent); }
+  .log-msg.warn { color: var(--amber); }
+
+  .stats-row { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+
+  .stat-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 16px 18px;
+    position: relative; overflow: hidden;
+    transition: border-color 0.2s, transform 0.2s;
+  }
+
+  .stat-card:hover { transform: translateY(-2px); }
+  .stat-card.completed { border-color: rgba(76,214,148,0.25); }
+  .stat-card.pending   { border-color: rgba(99,210,190,0.2); }
+  .stat-card.failed    { border-color: rgba(255,94,109,0.2); }
+  .stat-card.filtered  { border-color: rgba(245,166,35,0.2); }
+
+  .stat-card::after {
+    content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 2px;
+  }
+
+  .stat-card.completed::after { background: var(--green); }
+  .stat-card.pending::after   { background: var(--accent); }
+  .stat-card.failed::after    { background: var(--red); }
+  .stat-card.filtered::after  { background: var(--amber); }
+
+  .stat-label { font-size: 11px; color: var(--text-2); margin-bottom: 8px; letter-spacing: 0.3px; }
+
+  .stat-val {
+    font-family: var(--font-display); font-size: 32px; font-weight: 700; line-height: 1;
+  }
+
+  .stat-card.completed .stat-val { color: var(--green); }
+  .stat-card.pending   .stat-val { color: var(--accent); }
+  .stat-card.failed    .stat-val { color: var(--red); }
+  .stat-card.filtered  .stat-val { color: var(--amber); }
+
+  .stat-sub { font-size: 11px; color: var(--text-2); margin-top: 4px; }
+
+  .list-header { display: flex; align-items: center; justify-content: space-between; }
+
+  .section-title {
+    font-family: var(--font-display); font-size: 17px; font-weight: 700;
+    display: flex; align-items: center; gap: 10px;
+  }
+
+  .count-badge {
+    background: var(--accent-dim); border: 1px solid var(--border-accent);
+    color: var(--accent); font-size: 11px; font-family: var(--font-mono);
+    padding: 2px 8px; border-radius: 99px;
+  }
+
+  .filter-tabs {
+    display: flex; gap: 4px;
+    background: var(--bg-2); border: 1px solid var(--border);
+    border-radius: 99px; padding: 4px;
+  }
+
+  .tab {
+    padding: 6px 14px; border-radius: 99px;
+    font-size: 12px; font-weight: 500; cursor: pointer;
+    transition: all 0.18s; color: var(--text-2); border: none; background: transparent;
+  }
+
+  .tab.active { background: var(--bg-3); color: var(--text-0); box-shadow: 0 1px 4px rgba(0,0,0,0.4); }
+  .tab:not(.active):hover { color: var(--text-1); }
+
+  .bulk-btn {
+    display: flex; align-items: center; gap: 6px;
+    padding: 7px 14px; background: var(--bg-3);
+    border: 1px solid var(--border); border-radius: 8px;
+    color: var(--text-1); font-size: 12px; cursor: pointer; transition: all 0.2s;
+    margin-left: 8px;
+  }
+
+  .bulk-btn:hover { border-color: var(--border-accent); color: var(--accent); }
+
+  .sub-list { display: flex; flex-direction: column; gap: 10px; }
+
+  .sub-card {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius); overflow: hidden;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    animation: cardIn 0.35s ease both;
+  }
+
+  .sub-card:nth-child(1) { animation-delay: 0.05s; }
+  .sub-card:nth-child(2) { animation-delay: 0.12s; }
+  .sub-card:nth-child(3) { animation-delay: 0.19s; }
+  .sub-card:nth-child(4) { animation-delay: 0.26s; }
+
+  @keyframes cardIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .sub-card:hover { border-color: rgba(99,210,190,0.2); box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+  .sub-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; background: var(--bg-2); border-bottom: 1px solid var(--border);
+  }
+
+  .sub-meta { display: flex; align-items: center; gap: 10px; }
+
+  .sub-index {
+    font-family: var(--font-mono); font-size: 11px; color: var(--text-2);
+    background: var(--bg-3); padding: 2px 7px; border-radius: 4px;
+  }
+
+  .sub-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); }
+
+  .sub-status {
+    font-size: 11px; font-weight: 500; padding: 3px 10px;
+    border-radius: 99px; letter-spacing: 0.3px;
+  }
+
+  .sub-status.pending { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--border-accent); }
+  .sub-status.done    { background: var(--green-dim); color: var(--green); border: 1px solid rgba(76,214,148,0.25); }
+  .sub-status.failed  { background: var(--red-dim); color: var(--red); border: 1px solid rgba(255,94,109,0.25); }
+
+  .sub-body { display: grid; grid-template-columns: 1fr 1fr; }
+
+  .sub-col { padding: 14px 16px; }
+  .sub-col:first-child { border-right: 1px solid var(--border); }
+
+  .sub-col-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 1px;
+    text-transform: uppercase; color: var(--text-2);
+    margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+
+  .sub-col-label .flag { font-size: 13px; }
+
+  .sub-text { font-size: 14px; line-height: 1.6; color: var(--text-1); }
+  .sub-text.translated { color: var(--text-0); }
+  .sub-text.waiting { color: var(--text-2); font-style: italic; }
+
+  .skeleton {
+    height: 14px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--bg-3) 25%, var(--bg-2) 50%, var(--bg-3) 75%);
+    background-size: 200% 100%;
+    animation: skeleton 1.5s infinite;
+    margin-bottom: 6px;
+  }
+
+  .skeleton:last-child { width: 60%; }
+
+  @keyframes skeleton {
+    from { background-position: 200% 0; }
+    to   { background-position: -200% 0; }
+  }
+
+  .start-btn {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 14px;
+    background: linear-gradient(135deg, var(--accent) 0%, #3baed6 100%);
+    border: none; border-radius: var(--radius);
+    color: #071014;
+    font-family: var(--font-display); font-size: 14px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.5px; transition: all 0.2s;
+    box-shadow: 0 4px 20px rgba(99,210,190,0.3);
+    margin-top: auto;
+  }
+
+  .start-btn:hover { transform: translateY(-1px); box-shadow: 0 8px 28px rgba(99,210,190,0.4); }
+  .start-btn:active { transform: translateY(0); }
+
+  ::-webkit-scrollbar { width: 5px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--bg-3); border-radius: 99px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text-2); }
+</style>
+</head>
+<body>
+
+<header class="header">
+  <div class="logo">
+    <div class="logo-icon">✦</div>
+    <span class="logo-text">Sub<span>Lingo</span></span>
+  </div>
+
+  <div class="file-badge">
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+    <strong>xxxx.srt</strong>
+    <div class="dot"></div>
+    <span>字幕总数</span>
+    <strong>419</strong>
+  </div>
+
+  <button class="provider-btn">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+    Provider 中心
+  </button>
+</header>
+
+<div class="progress-strip">
+  <div class="progress-fill"></div>
+</div>
+
+<div class="main">
+  <aside class="sidebar">
+    <div class="sidebar-section">
+      <div class="sidebar-label">翻译参数</div>
+      <div class="config-item">
+        <span class="config-key">每批次数量</span>
+        <input class="config-input" type="number" value="10" min="1" max="50">
+      </div>
+      <div class="config-item">
+        <span class="config-key">上下文条数</span>
+        <input class="config-input" type="number" value="3" min="0" max="10">
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">当前 Provider</div>
+      <div class="provider-card">
+        <div class="provider-name">
+          <div class="status-dot"></div>
+          OpenAI
+        </div>
+        <div class="provider-model">gpt-4o-mini · 128k context</div>
+        <button class="params-btn">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+          模型参数
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-label">失败备选</div>
+      <div class="backup-provider">
+        <span class="backup-label">备选 Provider</span>
+        <span class="backup-val">Gemini ›</span>
+      </div>
+    </div>
+
+    <button class="start-btn" style="margin-top: 20px;">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      开始翻译
+    </button>
+  </aside>
+
+  <div class="content">
+    <div class="log-panel">
+      <div class="log-header">
+        <div class="log-title">
+          <div class="rec-dot"></div>
+          实时运行日志
+        </div>
+        <span style="font-size:11px;color:var(--text-2);font-family:var(--font-mono);cursor:pointer;">▾ 展开</span>
+      </div>
+      <div class="log-body">
+        <div class="log-line"><span class="log-time">14:22:01</span><span class="log-msg info">已加载 xxxx.srt，共 419 条字幕</span></div>
+        <div class="log-line"><span class="log-time">14:22:03</span><span class="log-msg ok">Provider OpenAI 连接成功</span></div>
+        <div class="log-line"><span class="log-time">14:22:05</span><span class="log-msg warn">批次 #3 重试中，已等待 2s...</span></div>
+      </div>
+    </div>
+
+    <div class="stats-row">
+      <div class="stat-card completed">
+        <div class="stat-label">已完成</div>
+        <div class="stat-val">106</div>
+        <div class="stat-sub">↑ 25.3%</div>
+      </div>
+      <div class="stat-card pending">
+        <div class="stat-label">待处理</div>
+        <div class="stat-val">313</div>
+        <div class="stat-sub">排队中</div>
+      </div>
+      <div class="stat-card failed">
+        <div class="stat-label">失败</div>
+        <div class="stat-val">0</div>
+        <div class="stat-sub">暂无错误</div>
+      </div>
+      <div class="stat-card filtered">
+        <div class="stat-label">筛选结果</div>
+        <div class="stat-val">313</div>
+        <div class="stat-sub">全部显示</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="list-header" style="margin-bottom:14px;">
+        <div class="section-title">
+          字幕预览
+          <span class="count-badge">419</span>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="filter-tabs">
+            <button class="tab active">全部 419</button>
+            <button class="tab">失败 0</button>
+            <button class="tab">成功 106</button>
+          </div>
+          <button class="bulk-btn">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            批量操作
+          </button>
+        </div>
+      </div>
+
+      <div class="sub-list">
+        <div class="sub-card">
+          <div class="sub-card-header">
+            <div class="sub-meta">
+              <span class="sub-index">#1</span>
+              <span class="sub-time">00:00:36,760 → 00:00:37,620</span>
+            </div>
+            <span class="sub-status done">已完成</span>
+          </div>
+          <div class="sub-body">
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇯🇵</span> 原文</div>
+              <div class="sub-text">おかえり。</div>
+            </div>
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇨🇳</span> 译文</div>
+              <div class="sub-text translated">你回来啦。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-header">
+            <div class="sub-meta">
+              <span class="sub-index">#2</span>
+              <span class="sub-time">00:00:38,100 → 00:00:40,220</span>
+            </div>
+            <span class="sub-status done">已完成</span>
+          </div>
+          <div class="sub-body">
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇯🇵</span> 原文</div>
+              <div class="sub-text">ただいま、疲れたよ。</div>
+            </div>
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇨🇳</span> 译文</div>
+              <div class="sub-text translated">我回来了，好累啊。</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-header">
+            <div class="sub-meta">
+              <span class="sub-index">#3</span>
+              <span class="sub-time">00:00:41,500 → 00:00:43,800</span>
+            </div>
+            <span class="sub-status pending">待翻译</span>
+          </div>
+          <div class="sub-body">
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇯🇵</span> 原文</div>
+              <div class="sub-text">今日も一日頑張ったね。</div>
+            </div>
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇨🇳</span> 译文</div>
+              <div><div class="skeleton"></div><div class="skeleton"></div></div>
+            </div>
+          </div>
+        </div>
+
+        <div class="sub-card">
+          <div class="sub-card-header">
+            <div class="sub-meta">
+              <span class="sub-index">#4</span>
+              <span class="sub-time">00:00:44,200 → 00:00:46,100</span>
+            </div>
+            <span class="sub-status pending">待翻译</span>
+          </div>
+          <div class="sub-body">
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇯🇵</span> 原文</div>
+              <div class="sub-text">ご飯、もうできてるよ。</div>
+            </div>
+            <div class="sub-col">
+              <div class="sub-col-label"><span class="flag">🇨🇳</span> 译文</div>
+              <div class="sub-text waiting">待翻译…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll('.stat-val').forEach(el => {
+    const target = parseInt(el.textContent);
+    if (isNaN(target) || target === 0) return;
+    let start = 0;
+    const dur = 900;
+    const t0 = performance.now();
+    function step(now) {
+      const p = Math.min((now - t0) / dur, 1);
+      const ease = 1 - Math.pow(1 - p, 3);
+      el.textContent = Math.round(ease * target);
+      if (p < 1) requestAnimationFrame(step);
+    }
+    requestAnimationFrame(step);
+  });
+
+  document.querySelectorAll('.tab').forEach(tab => {
+    tab.addEventListener('click', () => {
+      tab.closest('.filter-tabs').querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+    });
+  });
+</script>
+</body>
+</html>

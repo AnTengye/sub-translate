@@ -1,3 +1,4 @@
+import type { Dispatch } from 'react';
 import { listProviderDefinitions } from '../../../lib/providers/registry';
 import type { ProviderId } from '../../../lib/providers/types';
 import type { ProviderCenterProfile } from '../provider-center-api';
@@ -6,11 +7,8 @@ import type { SubtitleTranslatorState } from '../types';
 
 interface ProviderPanelProps {
   state: SubtitleTranslatorState;
-  dispatch: React.Dispatch<SubtitleTranslatorAction>;
+  dispatch: Dispatch<SubtitleTranslatorAction>;
   onStart: () => void | Promise<void>;
-  onCancelTranslation: () => void;
-  onReset: () => void;
-  onOpenAdvancedConfig: () => void;
 }
 
 const providerDefinitions = listProviderDefinitions();
@@ -24,92 +22,41 @@ function getActiveProfile(state: SubtitleTranslatorState): ProviderCenterProfile
   return family.profiles.find((profile) => profile.id === family.activeProfileId) ?? null;
 }
 
-export function ProviderPanel({
-  state,
-  dispatch,
-  onStart,
-  onCancelTranslation,
-  onReset,
-  onOpenAdvancedConfig,
-}: ProviderPanelProps) {
-  const activeProvider = providerDefinitions.find((provider) => provider.id === state.provider)!;
+function getProviderDisplayName(providerId: ProviderId) {
+  switch (providerId) {
+    case 'openai-compatible':
+      return 'OpenAI';
+    case 'claude-compatible':
+      return 'Claude';
+    case 'baidu':
+      return 'Baidu';
+    default:
+      return providerId;
+  }
+}
+
+export function ProviderPanel({ state, dispatch, onStart }: ProviderPanelProps) {
   const disableInputs = state.step === 'translating' || state.isRetrying || state.retryingIndex !== null;
   const activeProfile = getActiveProfile(state);
+  const activeProvider = providerDefinitions.find((provider) => provider.id === state.provider);
+  const activeProviderIndex = providerDefinitions.findIndex((provider) => provider.id === state.provider);
+  const backupProvider =
+    providerDefinitions[(activeProviderIndex + 1 + providerDefinitions.length) % providerDefinitions.length];
+
+  function switchProvider(providerId: ProviderId) {
+    dispatch({ type: 'setProvider', provider: providerId });
+  }
 
   return (
-    <aside className="sidebar">
-      <section className="panel-card panel-card-emphasis">
-        <div className="section-heading">
-          <div>
-            <div className="section-kicker">Workspace</div>
-            <div className="section-title">文件信息</div>
-          </div>
-        </div>
-        <div className="file-meta">
-          <strong>{state.fileName}</strong>
-          <span>{state.entries.length} 条字幕待处理</span>
-        </div>
-      </section>
-
-      <section className="panel-card">
-        <div className="section-heading">
-          <div>
-            <div className="section-kicker">Provider</div>
-            <div className="section-title">翻译引擎</div>
-          </div>
-          <button
-            className="secondary-button"
-            type="button"
-            aria-label="管理 Providers"
-            onClick={onOpenAdvancedConfig}
-          >
-            管理 Providers
-          </button>
-        </div>
-        <div className="provider-grid">
-          {providerDefinitions.map((provider) => (
-            <button
-              key={provider.id}
-              className={`provider-button${provider.id === state.provider ? ' active' : ''}`}
-              type="button"
-              disabled={disableInputs}
-              onClick={() =>
-                dispatch({ type: 'setProvider', provider: provider.id as ProviderId })
-              }
-            >
-              <span
-                className="provider-swatch"
-                style={{ backgroundColor: provider.color }}
-                aria-hidden="true"
-              />
-              <span className="provider-copy">
-                <strong>{provider.label}</strong>
-                <span>{provider.id.toUpperCase()}</span>
-              </span>
-            </button>
-          ))}
-        </div>
-        <div className="profile-chip">当前配置：{activeProfile?.name ?? '未加载'}</div>
-        <p className="muted-text">{activeProvider.desc}</p>
-        <p className="muted-text">
-          {activeProfile
-            ? `${activeProfile.enabled ? '已启用' : '已停用'} · ${activeProfile.health.summary}`
-            : 'Provider Center 数据加载中'}
-        </p>
-        <p className="warn-text">配置、模型列表、连通性检查全部由服务端统一管理。</p>
-      </section>
-
-      <section className="panel-card">
-        <div className="section-heading">
-          <div>
-            <div className="section-kicker">Tuning</div>
-            <div className="section-title">翻译参数</div>
-          </div>
-        </div>
-        <label className="field">
-          <span>每批字幕数量</span>
+    <aside className="sidebar" aria-label="配置侧栏">
+      <div className="sidebar-section">
+        <div className="sidebar-label">翻译参数</div>
+        <label className="config-item">
+          <span className="config-key">每批次数量</span>
           <input
-            type="range"
+            aria-label="每批字幕数量"
+            className="config-input"
+            type="number"
             min="5"
             max="50"
             step="1"
@@ -123,13 +70,13 @@ export function ProviderPanel({
               })
             }
           />
-          <strong className="field-value">{state.translationConfig.batchSize}</strong>
         </label>
-
-        <label className="field">
-          <span>上下文条数</span>
+        <label className="config-item">
+          <span className="config-key">上下文条数</span>
           <input
-            type="range"
+            aria-label="上下文条数"
+            className="config-input"
+            type="number"
             min="0"
             max="10"
             step="1"
@@ -143,14 +90,14 @@ export function ProviderPanel({
               })
             }
           />
-          <strong className="field-value">{state.translationConfig.contextLines}</strong>
         </label>
-
         {state.provider === 'openai-compatible' ? (
-          <label className="field">
-            <span>Temperature</span>
+          <label className="config-item">
+            <span className="config-key">Temperature</span>
             <input
-              type="range"
+              aria-label="Temperature"
+              className="config-input"
+              type="number"
               min="0"
               max="1"
               step="0.05"
@@ -164,57 +111,56 @@ export function ProviderPanel({
                 })
               }
             />
-            <strong className="field-value">{state.translationConfig.temperature.toFixed(2)}</strong>
           </label>
         ) : null}
-      </section>
+      </div>
 
-      <section className="panel-card">
-        <div className="section-heading">
-          <div>
-            <div className="section-kicker">Actions</div>
-            <div className="section-title">操作</div>
+      <div className="sidebar-section">
+        <div className="sidebar-label">当前 Provider</div>
+        <button
+          className="provider-card provider-card-button"
+          type="button"
+          aria-label={`当前 Provider ${getProviderDisplayName(state.provider)}`}
+          disabled={disableInputs}
+          onClick={() => switchProvider(backupProvider.id as ProviderId)}
+        >
+          <div className="provider-name">
+            <div className="status-dot" />
+            {getProviderDisplayName(state.provider)}
           </div>
-        </div>
-        <div className="button-stack">
-          {state.step === 'config' ? (
-            <button className="primary-button" type="button" onClick={onStart}>
-              开始翻译
-            </button>
-          ) : null}
-
-          {state.step === 'translating' ? (
-            <button className="secondary-button" type="button" onClick={onCancelTranslation}>
-              取消翻译
-            </button>
-          ) : null}
-
-          <button className="ghost-button" type="button" onClick={onReset}>
-            重新上传
-          </button>
-        </div>
-      </section>
-
-      <section className="panel-card">
-        <div className="section-heading">
-          <div>
-            <div className="section-kicker">Activity</div>
-            <div className="section-title">日志</div>
+          <div className="provider-model">
+            {(activeProfile?.settings.model ??
+              activeProfile?.settings.modelType ??
+              activeProvider?.label ??
+              '未配置')}{' '}
+            {activeProfile ? `· ${activeProfile.name}` : ''}
           </div>
-        </div>
-        <div className="log-list">
-          {state.logs.length === 0 ? (
-            <span className="muted-text">暂无日志</span>
-          ) : (
-            state.logs.slice(-8).map((log) => (
-              <div key={`${log.t}-${log.msg}`} className="log-item">
-                <span>{log.t}</span>
-                <span>{log.msg}</span>
-              </div>
-            ))
-          )}
-        </div>
-      </section>
+          <span className="params-btn">
+            模型参数
+          </span>
+        </button>
+        <div className="provider-helper-text">配置、模型列表、连通性检查全部由服务端统一管理。</div>
+      </div>
+
+      <div className="sidebar-section">
+        <div className="sidebar-label">失败备选</div>
+        <button
+          className="backup-provider"
+          type="button"
+          aria-label={`备选 Provider ${backupProvider.label}`}
+          disabled={disableInputs}
+          onClick={() => switchProvider(backupProvider.id as ProviderId)}
+        >
+          <span className="backup-label">备选 Provider</span>
+          <span className="backup-val">{backupProvider ? `${backupProvider.label} ›` : '未配置'}</span>
+        </button>
+      </div>
+
+      {state.step === 'config' ? (
+        <button className="start-btn" type="button" onClick={onStart}>
+          开始翻译
+        </button>
+      ) : null}
     </aside>
   );
 }

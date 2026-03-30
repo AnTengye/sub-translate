@@ -9,6 +9,7 @@ interface ResultToolbarProps {
   onRetryAllFailed: () => void | Promise<void>;
   onCancelRetry: () => void;
   onResetTranslation: () => void;
+  onCancelTranslation: () => void;
 }
 
 export function ResultToolbar({
@@ -20,16 +21,20 @@ export function ResultToolbar({
   onRetryAllFailed,
   onCancelRetry,
   onResetTranslation,
+  onCancelTranslation,
 }: ResultToolbarProps) {
   return (
-    <div className="toolbar">
-      <div className="toolbar-block">
-        <div className="toolbar-title">筛选结果</div>
-        <div className="filter-row">
+    <div className="list-header" style={{ marginBottom: '14px' }}>
+      <div className="section-title">
+        字幕预览
+        <span className="count-badge">{state.display.length}</span>
+      </div>
+      <div className="list-header-actions">
+        <div className="filter-tabs">
           {(['all', 'error', 'done'] as const).map((filter) => (
             <button
               key={filter}
-              className={`filter-button${state.filter === filter ? ' active' : ''}`}
+              className={`tab${state.filter === filter ? ' active' : ''}`}
               type="button"
               onClick={() => onFilterChange(filter)}
             >
@@ -39,31 +44,32 @@ export function ResultToolbar({
             </button>
           ))}
         </div>
-      </div>
 
-      <div className="toolbar-block align-end">
-        <div className="toolbar-title">批量操作</div>
-        <div className="button-row">
-          {state.step === 'done' ? (
-            <>
-              <button className="primary-button" type="button" onClick={onDownload}>
-                下载中文字幕
-              </button>
-              {errorCount > 0 ? (
-                <button className="secondary-button" type="button" onClick={onRetryAllFailed}>
-                  重试全部失败条目
-                </button>
-              ) : null}
-              <button className="ghost-button" type="button" onClick={onResetTranslation}>
-                重新翻译全部
-              </button>
-            </>
+        <div className="bulk-actions">
+          {state.step === 'translating' ? (
+            <button className="bulk-btn" type="button" onClick={onCancelTranslation}>
+              取消翻译
+            </button>
           ) : null}
-
           {state.isRetrying ? (
-            <button className="secondary-button" type="button" onClick={onCancelRetry}>
+            <button className="bulk-btn" type="button" onClick={onCancelRetry}>
               取消重试
             </button>
+          ) : null}
+          {state.step === 'done' ? (
+            <>
+              {errorCount > 0 ? (
+                <button className="bulk-btn" type="button" onClick={onRetryAllFailed}>
+                  重试失败
+                </button>
+              ) : null}
+              <button className="bulk-btn" type="button" onClick={onResetTranslation}>
+                重新翻译
+              </button>
+              <button className="bulk-btn" type="button" onClick={onDownload}>
+                下载结果
+              </button>
+            </>
           ) : null}
         </div>
       </div>

@@ -286,15 +286,22 @@ function renderPage() {
   );
 }
 
+async function openProviderCenter(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(
+    await screen.findByRole('button', { name: /(?:打开 Provider Center|管理 Providers)/i }),
+  );
+}
+
 describe('SubtitleTranslatorPage', () => {
   it('shows product-style upload entry copy before import', () => {
     renderPage();
 
-    expect(screen.getByText(/SRT Translate Workspace/i)).toBeInTheDocument();
-    expect(screen.getByText(/上传字幕，生成可导出的中文字幕/i)).toBeInTheDocument();
+    expect(screen.getByText(/SubLingo Control Room/i)).toBeInTheDocument();
+    expect(screen.getByText(/上传字幕，启动翻译控制台/i)).toBeInTheDocument();
+    expect(screen.getByText(/统一 Provider 管理/i)).toBeInTheDocument();
   });
 
-  it('shows provider summary after file import and uses server-backed profile data', async () => {
+  it('shows the new control-room workspace with a unified action bar after file import', async () => {
     renderPage();
 
     const input = screen.getByLabelText(/选择文件/i);
@@ -306,9 +313,32 @@ describe('SubtitleTranslatorPage', () => {
 
     fireEvent.change(input, { target: { files: [file] } });
 
-    expect(await screen.findByText(/翻译引擎/i)).toBeInTheDocument();
-    expect(screen.getByText(/当前配置：Local OpenAI/i)).toBeInTheDocument();
+    expect(await screen.findByRole('button', { name: /打开 Provider Center/i })).toBeInTheDocument();
+    expect(screen.getByText(/字幕总数/i)).toBeInTheDocument();
+    expect(screen.getByText(/翻译参数/i)).toBeInTheDocument();
+    expect(screen.getByText(/实时运行日志/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /开始翻译/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /打开 Provider Center/i })).toHaveLength(1);
+    expect(screen.getByRole('button', { name: /重新上传/i })).toBeInTheDocument();
     expect(screen.getByText(/服务端统一管理/i)).toBeInTheDocument();
+  });
+
+  it('allows switching between current and backup providers from the sidebar', async () => {
+    const user = userEvent.setup();
+    renderPage();
+
+    const input = screen.getByLabelText(/选择文件/i);
+    const file = new File(
+      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
+      'sample.srt',
+      { type: 'text/plain' },
+    );
+
+    fireEvent.change(input, { target: { files: [file] } });
+
+    expect(await screen.findByRole('button', { name: /当前 Provider OpenAI/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /备选 Provider Claude Compatible/i }));
+    expect(screen.getByRole('button', { name: /当前 Provider Claude/i })).toBeInTheDocument();
   });
 
   it('opens Provider Center and saves changes through the server API', async () => {
@@ -323,7 +353,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     expect(dialog).toBeInTheDocument();
@@ -361,7 +391,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     await user.click(within(dialog).getByRole('button', { name: /检测/i }));
@@ -380,7 +410,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     await user.click(within(dialog).getByRole('button', { name: /\+ 添加/i }));
@@ -404,7 +434,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     expect(within(dialog).queryByLabelText(/disableThinking/i)).not.toBeInTheDocument();
@@ -427,7 +457,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     expect(within(dialog).queryByRole('button', { name: /^搜索$/ })).not.toBeInTheDocument();
@@ -464,7 +494,7 @@ describe('SubtitleTranslatorPage', () => {
     );
 
     fireEvent.change(input, { target: { files: [file] } });
-    await user.click(await screen.findByRole('button', { name: /管理 Providers/i }));
+    await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
     await user.click(within(dialog).getByRole('button', { name: /New API Mirror/i }));
