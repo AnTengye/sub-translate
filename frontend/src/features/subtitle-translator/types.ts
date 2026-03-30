@@ -1,7 +1,7 @@
 import type { SubtitleEntry } from '../../lib/subtitle/types';
-import type { ProviderId } from '../../lib/providers/types';
 import type { ProviderProfileStorageData } from './config-storage';
 import type { ProviderCenterStateData } from './provider-center-api';
+import type { ProviderTarget } from './target-selection';
 
 export interface TranslationConfig {
   batchSize: number;
@@ -24,12 +24,12 @@ export interface SubtitleTranslatorState {
   fileName: string;
   entries: SubtitleEntry[];
   display: SubtitleEntry[];
-  provider: ProviderId;
-  activeProfileId: string | null;
   providerCenter: ProviderCenterStateData | null;
   providerProfiles: ProviderProfileStorageData;
-  providerConfig: Record<string, string>;
+  primaryTarget: ProviderTarget | null;
+  fallbackTarget: ProviderTarget | null;
   translationConfig: TranslationConfig;
+  advancedParamsOpen: boolean;
   progress: number;
   logs: TranslationLogEntry[];
   filter: SubtitleFilter;

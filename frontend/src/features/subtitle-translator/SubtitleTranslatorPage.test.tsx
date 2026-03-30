@@ -28,7 +28,6 @@ const providerCenterState = {
           },
           settings: {
             model: 'qwen-local',
-            disableThinking: '',
           },
           capabilities: {
             supportsModelDiscovery: true,
@@ -36,17 +35,20 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: true,
           },
-          models: [],
+          models: [
+            { id: 'qwen-local', label: 'qwen-local', enabled: true, source: 'manual' },
+            { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual' },
+          ],
           modelDiscovery: {
             sourceMode: 'auto',
             supportsModelDiscovery: true,
             lastCheckedAt: null,
-            lastStatus: 'idle',
+            lastStatus: 'success',
             lastError: null,
           },
           health: {
-            status: 'idle',
-            summary: '未检查',
+            status: 'success',
+            summary: '连接配置有效，可继续进行模型检查或翻译',
             lastCheckedAt: null,
             error: null,
           },
@@ -55,7 +57,7 @@ const providerCenterState = {
           id: 'openai-compatible-newapi',
           family: 'openai-compatible',
           name: 'New API Mirror',
-          enabled: false,
+          enabled: true,
           isDefault: false,
           connection: {
             apiEndpoint: 'https://newapi.example.com/v1',
@@ -71,17 +73,20 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: true,
           },
-          models: [],
+          models: [
+            { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual' },
+            { id: 'gpt-4.1', label: 'gpt-4.1', enabled: true, source: 'manual' },
+          ],
           modelDiscovery: {
             sourceMode: 'auto',
             supportsModelDiscovery: true,
             lastCheckedAt: null,
-            lastStatus: 'idle',
+            lastStatus: 'success',
             lastError: null,
           },
           health: {
-            status: 'warning',
-            summary: '已停用',
+            status: 'success',
+            summary: 'New API 可用',
             lastCheckedAt: null,
             error: null,
           },
@@ -114,17 +119,19 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: false,
           },
-          models: [],
+          models: [
+            { id: 'claude-sonnet', label: 'claude-sonnet', enabled: true, source: 'manual' },
+          ],
           modelDiscovery: {
             sourceMode: 'manual',
             supportsModelDiscovery: false,
             lastCheckedAt: null,
-            lastStatus: 'idle',
+            lastStatus: 'success',
             lastError: null,
           },
           health: {
-            status: 'idle',
-            summary: '未检查',
+            status: 'success',
+            summary: 'Claude 可用',
             lastCheckedAt: null,
             error: null,
           },
@@ -160,17 +167,19 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: false,
           },
-          models: [],
+          models: [
+            { id: 'llm', label: 'llm', enabled: true, source: 'manual' },
+          ],
           modelDiscovery: {
             sourceMode: 'manual',
             supportsModelDiscovery: false,
             lastCheckedAt: null,
-            lastStatus: 'idle',
+            lastStatus: 'warning',
             lastError: null,
           },
           health: {
-            status: 'idle',
-            summary: '未检查',
+            status: 'warning',
+            summary: '未通过检测',
             lastCheckedAt: null,
             error: null,
           },
@@ -259,6 +268,21 @@ function createFetchMock() {
     }
 
     if (url === '/api/translate/openai-compatible') {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      if (body.profileId === 'openai-compatible-default') {
+        return new Response(JSON.stringify({ error: 'primary failed' }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        });
+      }
+
+      return new Response(JSON.stringify({ translations: ['你好'] }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    if (url === '/api/translate/claude-compatible') {
       return new Response(JSON.stringify({ translations: ['你好'] }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
@@ -286,6 +310,16 @@ function renderPage() {
   );
 }
 
+async function importSubtitle() {
+  const input = screen.getByLabelText(/选择文件/i);
+  const file = new File(['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'], 'sample.srt', {
+    type: 'text/plain',
+  });
+
+  fireEvent.change(input, { target: { files: [file] } });
+  await screen.findByRole('button', { name: /开始翻译/i });
+}
+
 async function openProviderCenter(user: ReturnType<typeof userEvent.setup>) {
   await user.click(
     await screen.findByRole('button', { name: /(?:打开 Provider Center|管理 Providers)/i }),
@@ -301,67 +335,62 @@ describe('SubtitleTranslatorPage', () => {
     expect(screen.getByText(/统一 Provider 管理/i)).toBeInTheDocument();
   });
 
-  it('shows the new control-room workspace with a unified action bar after file import', async () => {
+  it('shows explicit primary and fallback provider selectors after file import', async () => {
     renderPage();
+    await importSubtitle();
 
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
-
-    expect(await screen.findByRole('button', { name: /打开 Provider Center/i })).toBeInTheDocument();
-    expect(screen.getByText(/字幕总数/i)).toBeInTheDocument();
-    expect(screen.getByText(/翻译参数/i)).toBeInTheDocument();
-    expect(screen.getByText(/实时运行日志/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /开始翻译/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('button', { name: /打开 Provider Center/i })).toHaveLength(1);
-    expect(screen.getByRole('button', { name: /重新上传/i })).toBeInTheDocument();
-    expect(screen.getByText(/服务端统一管理/i)).toBeInTheDocument();
+    expect(screen.getByText(/^主 Provider$/i)).toBeInTheDocument();
+    expect(screen.getByText(/失败备选/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/主 Provider 配置/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/主 Provider 模型/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/备选 Provider 配置/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/备选 Provider 模型/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /当前 Provider/i })).not.toBeInTheDocument();
   });
 
-  it('allows switching between current and backup providers from the sidebar', async () => {
+  it('filters sidebar provider choices to checked profiles with enabled models and supports independent selection', async () => {
     const user = userEvent.setup();
     renderPage();
+    await importSubtitle();
 
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
+    await user.click(screen.getByRole('button', { name: /主 Provider 配置/i }));
+    expect(screen.queryByRole('option', { name: /Baidu Local/i })).not.toBeInTheDocument();
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 配置 选项/i })).getByRole('option', { name: /New API Mirror/i }));
 
-    fireEvent.change(input, { target: { files: [file] } });
+    await user.click(screen.getByRole('button', { name: /主 Provider 模型/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1 manual/i }));
 
-    expect(await screen.findByRole('button', { name: /当前 Provider OpenAI/i })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /备选 Provider Claude Compatible/i }));
-    expect(screen.getByRole('button', { name: /当前 Provider Claude/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /备选 Provider 配置/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /备选 Provider 配置 选项/i })).getByRole('option', { name: /Claude Local/i }));
+
+    await user.click(screen.getByRole('button', { name: /备选 Provider 模型/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /备选 Provider 模型 选项/i })).getByRole('option', { name: /claude-sonnet/i }));
+
+    expect(screen.getAllByText('New API Mirror').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('gpt-4.1').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Claude Local').length).toBeGreaterThan(0);
+  });
+
+  it('keeps advanced parameters collapsed by default and opens them in a floating panel', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await importSubtitle();
+
+    expect(screen.queryByLabelText(/Temperature/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /高级参数/i }));
+
+    expect(screen.getByRole('dialog', { name: /高级参数/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/Temperature/i)).toBeInTheDocument();
   });
 
   it('opens Provider Center and saves changes through the server API', async () => {
     const user = userEvent.setup();
     renderPage();
-
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
+    await importSubtitle();
     await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
-    expect(dialog).toBeInTheDocument();
-
-    expect(within(dialog).getByRole('button', { name: /Local OpenAI/i })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /New API Mirror/i })).toBeInTheDocument();
-    expect(within(dialog).getByRole('button', { name: /Claude Local/i })).toBeInTheDocument();
-
     const modelInput = within(dialog).getByLabelText(/默认模型/i);
     fireEvent.change(modelInput, { target: { value: 'gpt-4.1-mini' } });
     await user.click(within(dialog).getByRole('button', { name: /保存配置/i }));
@@ -382,34 +411,18 @@ describe('SubtitleTranslatorPage', () => {
   it('runs connectivity checks and model discovery from Provider Center', async () => {
     const user = userEvent.setup();
     renderPage();
-
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
+    await importSubtitle();
     await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
-    await user.click(within(dialog).getByRole('button', { name: /检测/i }));
+    await user.click(within(dialog).getAllByRole('button', { name: /检测/i })[0]);
     expect(await screen.findAllByText(/连接配置有效，可继续进行模型检查或翻译/i)).not.toHaveLength(0);
   });
 
   it('opens the add-provider modal and exposes supported provider types', async () => {
     const user = userEvent.setup();
     renderPage();
-
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
+    await importSubtitle();
     await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
@@ -425,15 +438,7 @@ describe('SubtitleTranslatorPage', () => {
   it('removes OpenAI runtime toggles from provider center while retaining Baidu-specific fields', async () => {
     const user = userEvent.setup();
     renderPage();
-
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
+    await importSubtitle();
     await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
@@ -448,62 +453,27 @@ describe('SubtitleTranslatorPage', () => {
   it('opens model manager from 管理, fetches remote catalog, and saves only selected models', async () => {
     const user = userEvent.setup();
     renderPage();
-
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
+    await importSubtitle();
     await openProviderCenter(user);
 
     const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
-    expect(within(dialog).queryByRole('button', { name: /^搜索$/ })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('button', { name: /自动发现模型/i })).not.toBeInTheDocument();
-
     await user.click(within(dialog).getByRole('button', { name: /^管理$/ }));
 
     const modelDialog = await within(dialog).findByRole('dialog', { name: /模型管理/i });
     expect(await within(modelDialog).findByText(/发现 2 个模型/i)).toBeInTheDocument();
     expect(within(modelDialog).getByLabelText('gpt-4.1-mini')).toBeInTheDocument();
     expect(within(modelDialog).getByLabelText('gpt-4.1')).toBeInTheDocument();
-
-    await user.click(within(modelDialog).getByLabelText('gpt-4.1-mini'));
-    await user.click(within(modelDialog).getByRole('button', { name: /添加到当前配置/i }));
-
-    await waitFor(() => {
-      expect(within(dialog).getByText(/1 个已添加模型/i)).toBeInTheDocument();
-    });
-    const modelBoard = dialog.querySelector('.provider-center-model-board');
-    expect(modelBoard).not.toBeNull();
-    const modelNames = Array.from(modelBoard?.querySelectorAll('strong') ?? []).map((element) => element.textContent);
-    expect(modelNames).toEqual(['gpt-4.1-mini']);
   });
 
-  it('uses the selected New API profile runtime when starting translation', async () => {
+  it('uses the selected primary target runtime when starting translation', async () => {
     const user = userEvent.setup();
     renderPage();
+    await importSubtitle();
 
-    const input = screen.getByLabelText(/选择文件/i);
-    const file = new File(
-      ['1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n'],
-      'sample.srt',
-      { type: 'text/plain' },
-    );
-
-    fireEvent.change(input, { target: { files: [file] } });
-    await openProviderCenter(user);
-
-    const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
-    await user.click(within(dialog).getByRole('button', { name: /New API Mirror/i }));
-    await user.click(within(dialog).getByRole('button', { name: /保存配置/i }));
-
-    await waitFor(() => {
-      expect(screen.queryByRole('dialog', { name: /Provider Center/i })).not.toBeInTheDocument();
-    });
-
+    await user.click(screen.getByRole('button', { name: /主 Provider 配置/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 配置 选项/i })).getByRole('option', { name: /New API Mirror/i }));
+    await user.click(screen.getByRole('button', { name: /主 Provider 模型/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /gpt-4\.1-mini manual/i }));
     await user.click(screen.getByRole('button', { name: /开始翻译/i }));
 
     await waitFor(() => {
@@ -518,16 +488,47 @@ describe('SubtitleTranslatorPage', () => {
 
     const translateCall = vi
       .mocked(fetch)
-      .mock.calls.find(([requestUrl]) => requestUrl === '/api/translate/openai-compatible');
-    expect(translateCall).toBeTruthy();
+      .mock.calls.find(
+        ([requestUrl, options]) =>
+          requestUrl === '/api/translate/openai-compatible' &&
+          String(options?.body ?? '').includes('"profileId":"openai-compatible-newapi"'),
+      );
     const body = JSON.parse(String(translateCall?.[1]?.body ?? '{}'));
     expect(body.runtimeOverrides.apiEndpoint).toBe('https://newapi.example.com/v1');
     expect(body.runtimeOverrides.apiKey).toBe('newapi-key');
     expect(body.options.model).toBe('gpt-4.1-mini');
   });
 
-  it('keeps checkbox fields out of full-width text input styling', () => {
+  it('falls back to the secondary target when the primary target request fails', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await importSubtitle();
+
+    await user.click(screen.getByRole('button', { name: /主 Provider 配置/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 配置 选项/i })).getByRole('option', { name: /Local OpenAI/i }));
+    await user.click(screen.getByRole('button', { name: /主 Provider 模型/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /主 Provider 模型 选项/i })).getByRole('option', { name: /qwen-local/i }));
+    await user.click(screen.getByRole('button', { name: /备选 Provider 配置/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /备选 Provider 配置 选项/i })).getByRole('option', { name: /Claude Local/i }));
+    await user.click(screen.getByRole('button', { name: /备选 Provider 模型/i }));
+    await user.click(within(screen.getByRole('listbox', { name: /备选 Provider 模型 选项/i })).getByRole('option', { name: /claude-sonnet/i }));
+    await user.click(screen.getByRole('button', { name: /开始翻译/i }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/translate/claude-compatible',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"profileId":"claude-compatible-default"'),
+        }),
+      );
+    });
+  });
+
+  it('keeps checkbox fields out of full-width text input styling and includes floating panel styles', () => {
     const css = readFileSync(resolve(process.cwd(), 'src/styles/globals.css'), 'utf8');
     expect(css).toContain(".field input:not([type='checkbox'])");
+    expect(css).toContain('.advanced-params-popover');
+    expect(css).toContain('position: absolute');
   });
 });

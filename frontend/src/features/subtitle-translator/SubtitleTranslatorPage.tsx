@@ -106,12 +106,12 @@ export default function SubtitleTranslatorPage() {
     toast.success('已保存，将用于后续新任务');
   }
 
-  async function handleCheckProviderProfile(family: typeof state.provider, profileId: string) {
+  async function handleCheckProviderProfile(family: 'openai-compatible' | 'claude-compatible' | 'baidu', profileId: string) {
     const result = await checkProviderProfile(family, profileId);
     return result.profile as ProviderCenterProfile;
   }
 
-  async function handleLoadProviderModels(family: typeof state.provider, profileId: string) {
+  async function handleLoadProviderModels(family: 'openai-compatible' | 'claude-compatible' | 'baidu', profileId: string) {
     return fetchProviderProfileModelCatalog(family, profileId);
   }
 
@@ -210,7 +210,7 @@ export default function SubtitleTranslatorPage() {
       <ProviderCenter
         isOpen={isAdvancedConfigOpen}
         providerCenter={state.providerCenter}
-        initialProvider={state.provider}
+        initialProvider={state.primaryTarget?.family ?? state.providerCenter?.defaultProvider ?? 'openai-compatible'}
         disableSave={busy}
         onClose={() => setIsAdvancedConfigOpen(false)}
         onSave={handleSaveProviderCenter}

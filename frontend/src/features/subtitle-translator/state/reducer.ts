@@ -7,25 +7,25 @@ import type {
   TranslationLogEntry,
   WorkflowStep,
 } from '../types';
+import { loadProviderProfiles, type ProviderProfileStorageData } from '../config-storage';
+import type { ProviderCenterStateData } from '../provider-center-api';
 import {
-  getActiveProviderProfile,
-  loadProviderProfiles,
-  type ProviderProfileStorageData,
-  updateActiveProviderProfileConfig,
-} from '../config-storage';
-import type { ProviderCenterProfile, ProviderCenterStateData } from '../provider-center-api';
-
-type ProviderId = SubtitleTranslatorState['provider'];
+  ensureDistinctTarget,
+  getDefaultTargets,
+  type ProviderTarget,
+  buildProviderTargetOptions,
+} from '../target-selection';
 
 export type SubtitleTranslatorAction =
   | { type: 'reset' }
   | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
-  | { type: 'setProvider'; provider: ProviderId }
   | { type: 'hydrateProviderCenter'; providerCenter: ProviderCenterStateData }
   | { type: 'replaceProviderProfiles'; providerProfiles: ProviderProfileStorageData }
-  | { type: 'updateProviderConfig'; key: string; value: string }
+  | { type: 'setPrimaryTarget'; target: ProviderTarget | null }
+  | { type: 'setFallbackTarget'; target: ProviderTarget | null }
   | { type: 'updateTranslationConfig'; key: keyof TranslationConfig; value: number }
+  | { type: 'toggleAdvancedParams'; open?: boolean }
   | { type: 'startTranslation' }
   | { type: 'translationProgress'; display: SubtitleEntry[]; progress: number }
   | { type: 'translationDone'; display: SubtitleEntry[] }
@@ -41,63 +41,33 @@ export type SubtitleTranslatorAction =
   | { type: 'finishRetrySingle'; display: SubtitleEntry[]; index: number | null }
   | { type: 'setError'; error: string | null };
 
-function getActiveProviderConfig(
-  providerProfiles: ProviderProfileStorageData,
-  provider: ProviderId,
-): Record<string, string> {
-  const activeProfile = getActiveProviderProfile(providerProfiles, provider);
-
-  return activeProfile ? { ...activeProfile.config } : {};
-}
-
-function getActiveServerProfile(
+function reconcileTargets(
   providerCenter: ProviderCenterStateData | null,
-  provider: ProviderId,
-): ProviderCenterProfile | null {
-  const family = providerCenter?.families[provider];
-  if (!family) {
-    return null;
-  }
-
-  return family.profiles.find((profile) => profile.id === family.activeProfileId) ?? null;
-}
-
-function getServerBackedProviderConfig(
-  providerCenter: ProviderCenterStateData | null,
-  provider: ProviderId,
-  fallbackProfiles: ProviderProfileStorageData,
-): Record<string, string> {
-  const activeProfile = getActiveServerProfile(providerCenter, provider);
-  if (!activeProfile) {
-    return getActiveProviderConfig(fallbackProfiles, provider);
-  }
-
-  return {
-    ...activeProfile.connection,
-    ...activeProfile.settings,
-  };
+  primaryTarget: ProviderTarget | null,
+  fallbackTarget: ProviderTarget | null,
+) {
+  const options = buildProviderTargetOptions(providerCenter);
+  return ensureDistinctTarget(options, primaryTarget, fallbackTarget);
 }
 
 export function createInitialState(
   providerProfiles = loadProviderProfiles(createAppProviderRuntimeSeeds()),
 ): SubtitleTranslatorState {
-  const provider = providerProfiles.defaultProvider;
-
   return {
     step: 'upload',
     fileName: '',
     entries: [],
     display: [],
-    provider,
-    activeProfileId: null,
     providerCenter: null,
     providerProfiles,
-    providerConfig: getServerBackedProviderConfig(null, provider, providerProfiles),
+    primaryTarget: null,
+    fallbackTarget: null,
     translationConfig: {
       batchSize: 20,
       contextLines: 3,
       temperature: 0.3,
     },
+    advancedParamsOpen: false,
     progress: 0,
     logs: [],
     filter: 'all',
@@ -133,51 +103,42 @@ export function subtitleTranslatorReducer(
         ...state,
         error: action.error,
       };
-    case 'setProvider':
-      return {
-        ...state,
-        provider: action.provider,
-        activeProfileId: state.providerCenter?.families[action.provider]?.activeProfileId ?? null,
-        providerConfig: getServerBackedProviderConfig(
-          state.providerCenter,
-          action.provider,
-          state.providerProfiles,
-        ),
-      };
-    case 'hydrateProviderCenter':
+    case 'hydrateProviderCenter': {
+      const defaults = getDefaultTargets(action.providerCenter);
+      const targets = reconcileTargets(
+        action.providerCenter,
+        state.primaryTarget ?? defaults.primaryTarget,
+        state.fallbackTarget ?? defaults.fallbackTarget,
+      );
+
       return {
         ...state,
         providerCenter: action.providerCenter,
-        provider: action.providerCenter.defaultProvider,
-        activeProfileId:
-          action.providerCenter.families[action.providerCenter.defaultProvider]?.activeProfileId ?? null,
-        providerConfig: getServerBackedProviderConfig(
-          action.providerCenter,
-          action.providerCenter.defaultProvider,
-          state.providerProfiles,
-        ),
+        primaryTarget: targets.primaryTarget,
+        fallbackTarget: targets.fallbackTarget,
       };
+    }
     case 'replaceProviderProfiles':
       return {
         ...state,
         providerProfiles: action.providerProfiles,
-        providerConfig: getServerBackedProviderConfig(
-          state.providerCenter,
-          state.provider,
-          action.providerProfiles,
-        ),
       };
-    case 'updateProviderConfig':
+    case 'setPrimaryTarget': {
+      const targets = reconcileTargets(state.providerCenter, action.target, state.fallbackTarget);
       return {
         ...state,
-        providerProfiles: updateActiveProviderProfileConfig(state.providerProfiles, state.provider, {
-          [action.key]: action.value,
-        }),
-        providerConfig: {
-          ...state.providerConfig,
-          [action.key]: action.value,
-        },
+        primaryTarget: targets.primaryTarget,
+        fallbackTarget: targets.fallbackTarget,
       };
+    }
+    case 'setFallbackTarget': {
+      const targets = reconcileTargets(state.providerCenter, state.primaryTarget, action.target);
+      return {
+        ...state,
+        primaryTarget: targets.primaryTarget,
+        fallbackTarget: targets.fallbackTarget,
+      };
+    }
     case 'updateTranslationConfig':
       return {
         ...state,
@@ -185,6 +146,11 @@ export function subtitleTranslatorReducer(
           ...state.translationConfig,
           [action.key]: action.value,
         },
+      };
+    case 'toggleAdvancedParams':
+      return {
+        ...state,
+        advancedParamsOpen: action.open ?? !state.advancedParamsOpen,
       };
     case 'startTranslation':
       return {
@@ -199,6 +165,7 @@ export function subtitleTranslatorReducer(
         logs: [],
         error: null,
         filter: 'all',
+        advancedParamsOpen: false,
       };
     case 'translationProgress':
       return {

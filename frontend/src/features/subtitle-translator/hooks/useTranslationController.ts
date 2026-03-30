@@ -1,12 +1,12 @@
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import {
   createTranslationRun,
   dispatchTranslate as dispatchTranslateWithProvider,
   finalizeTranslationRun,
 } from '../../../lib/providers/registry';
-import type { ProviderRuntimeOverrides } from '../../../lib/providers/types';
 import type { SubtitleEntry } from '../../../lib/subtitle/types';
 import type { SubtitleTranslatorAction } from '../state/reducer';
+import { buildProviderRequestConfig, isSameTarget } from '../target-selection';
 import type { SubtitleTranslatorState } from '../types';
 import { runRetry, runTranslation } from '../utils/translation';
 
@@ -30,57 +30,6 @@ function summarizeDisplay(entries: SubtitleEntry[], targetedEntries?: number) {
   };
 }
 
-function buildProviderOptions(state: SubtitleTranslatorState) {
-  switch (state.provider) {
-    case 'openai-compatible': {
-      const config: Record<string, string> = {};
-      if (state.providerConfig.model) {
-        config.model = state.providerConfig.model;
-      }
-      if (state.providerConfig.disableThinking) {
-        config.disableThinking = state.providerConfig.disableThinking;
-      }
-      config.temperature = String(state.translationConfig.temperature);
-      return config;
-    }
-    case 'claude-compatible':
-      return state.providerConfig.model ? { model: state.providerConfig.model } : {};
-    case 'baidu': {
-      const config: Record<string, string> = {};
-      ['modelType', 'reference', 'punctuationPreprocessing'].forEach((key) => {
-        const value = state.providerConfig[key];
-        if (value) {
-          config[key] = value;
-        }
-      });
-      return config;
-    }
-    default:
-      return {};
-  }
-}
-
-function buildRuntimeOverrides(state: SubtitleTranslatorState): ProviderRuntimeOverrides {
-  switch (state.provider) {
-    case 'openai-compatible':
-    case 'claude-compatible':
-      return {
-        apiEndpoint: state.providerConfig.apiEndpoint || undefined,
-        apiKey: state.providerConfig.apiKey || undefined,
-        providerLabel: state.providerConfig.providerLabel || undefined,
-      };
-    case 'baidu':
-      return {
-        apiEndpoint: state.providerConfig.apiEndpoint || undefined,
-        appId: state.providerConfig.appId || undefined,
-        apiKey: state.providerConfig.apiKey || undefined,
-        secretKey: state.providerConfig.secretKey || undefined,
-      };
-    default:
-      return {};
-  }
-}
-
 export function useTranslationController(
   state: SubtitleTranslatorState,
   dispatch: React.Dispatch<SubtitleTranslatorAction>,
@@ -93,12 +42,6 @@ export function useTranslationController(
     displayRef.current = state.display;
   }, [state.display]);
 
-  const providerRuntimeConfig = useMemo(
-    () => buildProviderOptions(state),
-    [state],
-  );
-  const providerRuntimeOverrides = useMemo(() => buildRuntimeOverrides(state), [state]);
-
   function appendLog(message: string) {
     dispatch({
       type: 'appendLog',
@@ -107,18 +50,28 @@ export function useTranslationController(
   }
 
   async function createRun(mode: 'translate' | 'retry-all' | 'retry-single', signal: AbortSignal) {
+    const primaryRequest = buildProviderRequestConfig(
+      state.providerCenter,
+      state.primaryTarget,
+      state.translationConfig.temperature,
+    );
+
+    if (!primaryRequest) {
+      throw new Error('主 Provider 未配置');
+    }
+
     const run = await createTranslationRun(
       {
         fileName: state.fileName,
-        provider: state.provider,
-        profileId: state.activeProfileId ?? undefined,
+        provider: primaryRequest.provider,
+        profileId: primaryRequest.profileId ?? undefined,
         totalEntries: state.entries.length,
         entries: state.entries.map((entry) => ({
           idx: entry.idx,
           timecode: entry.timecode,
           text: entry.text,
         })),
-        providerConfig: providerRuntimeConfig,
+        providerConfig: primaryRequest.config,
         translationConfig: state.translationConfig,
         mode,
       },
@@ -162,6 +115,67 @@ export function useTranslationController(
     }
   }
 
+  async function dispatchWithFallback(
+    texts: string[],
+    contextTexts: string[],
+    batch: Parameters<Parameters<typeof runTranslation>[1]['dispatchTranslate']>[2],
+    runId: string,
+    signal: AbortSignal,
+  ) {
+    const primaryRequest = buildProviderRequestConfig(
+      state.providerCenter,
+      state.primaryTarget,
+      state.translationConfig.temperature,
+    );
+    const fallbackRequest = buildProviderRequestConfig(
+      state.providerCenter,
+      state.fallbackTarget,
+      state.translationConfig.temperature,
+    );
+
+    if (!primaryRequest) {
+      throw new Error('主 Provider 未配置');
+    }
+
+    try {
+      return await dispatchTranslateWithProvider(
+        primaryRequest.provider,
+        primaryRequest.profileId,
+        texts,
+        contextTexts,
+        batch,
+        runId,
+        primaryRequest.config,
+        primaryRequest.runtimeOverrides,
+        signal,
+      );
+    } catch (error) {
+      if (
+        !fallbackRequest ||
+        isSameTarget(state.primaryTarget, state.fallbackTarget) ||
+        isCancellationError(error)
+      ) {
+        throw error;
+      }
+
+      appendLog(
+        `⚠️ 主 Provider 失败，切换备选 ${fallbackRequest.profileId ?? fallbackRequest.provider}`,
+      );
+
+      return dispatchTranslateWithProvider(
+        fallbackRequest.provider,
+        fallbackRequest.profileId,
+        texts,
+        contextTexts,
+        batch,
+        runId,
+        fallbackRequest.config,
+        fallbackRequest.runtimeOverrides,
+        signal,
+      );
+    }
+  }
+
   async function startTranslation() {
     dispatch({ type: 'startTranslation' });
     translationAbortRef.current = new AbortController();
@@ -181,15 +195,11 @@ export function useTranslationController(
         delayMs: 150,
         signal: translationAbortRef.current.signal,
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
-          dispatchTranslateWithProvider(
-            state.provider,
-            state.activeProfileId,
+          dispatchWithFallback(
             texts,
             contextTexts,
             batch,
             currentRunId,
-            providerRuntimeConfig,
-            providerRuntimeOverrides,
             translationAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries, progress) => {
@@ -249,15 +259,11 @@ export function useTranslationController(
         delayMs: 150,
         signal: retryAbortRef.current.signal,
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
-          dispatchTranslateWithProvider(
-            state.provider,
-            state.activeProfileId,
+          dispatchWithFallback(
             texts,
             contextTexts,
             batch,
             currentRunId,
-            providerRuntimeConfig,
-            providerRuntimeOverrides,
             retryAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries) => {
@@ -306,15 +312,11 @@ export function useTranslationController(
         contextLines: state.translationConfig.contextLines,
         signal: retryAbortRef.current.signal,
         dispatchTranslate: (texts, contextTexts, batch, currentRunId) =>
-          dispatchTranslateWithProvider(
-            state.provider,
-            state.activeProfileId,
+          dispatchWithFallback(
             texts,
             contextTexts,
             batch,
             currentRunId,
-            providerRuntimeConfig,
-            providerRuntimeOverrides,
             retryAbortRef.current?.signal ?? new AbortController().signal,
           ),
         onUpdate: (entries) => {
