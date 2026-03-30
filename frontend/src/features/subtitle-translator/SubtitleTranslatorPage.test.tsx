@@ -419,6 +419,37 @@ describe('SubtitleTranslatorPage', () => {
     expect(await screen.findAllByText(/连接配置有效，可继续进行模型检查或翻译/i)).not.toHaveLength(0);
   });
 
+  it('sends the unsaved endpoint and api key when checking a provider profile', async () => {
+    const user = userEvent.setup();
+    renderPage();
+    await importSubtitle();
+    await openProviderCenter(user);
+
+    const dialog = await screen.findByRole('dialog', { name: /Provider Center/i });
+    await user.clear(within(dialog).getByLabelText(/apiEndpoint/i));
+    await user.type(within(dialog).getByLabelText(/apiEndpoint/i), 'https://draft.example.com/v1');
+    await user.clear(within(dialog).getByLabelText(/apiKey/i));
+    await user.type(within(dialog).getByLabelText(/apiKey/i), 'draft-key');
+    await user.click(within(await screen.findByRole('dialog', { name: /Provider Center/i })).getByRole('button', { name: /^检测$/ }));
+
+    await waitFor(() => {
+      expect(fetch).toHaveBeenCalledWith(
+        '/api/provider-center/check',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"apiEndpoint":"https://draft.example.com/v1"'),
+        }),
+      );
+    });
+
+    const checkCall = vi
+      .mocked(fetch)
+      .mock.calls.find(([requestUrl]) => requestUrl === '/api/provider-center/check');
+    const body = JSON.parse(String(checkCall?.[1]?.body ?? '{}'));
+    expect(body.profile.connection.apiEndpoint).toBe('https://draft.example.com/v1');
+    expect(body.profile.connection.apiKey).toBe('draft-key');
+  });
+
   it('opens the add-provider modal and exposes supported provider types', async () => {
     const user = userEvent.setup();
     renderPage();

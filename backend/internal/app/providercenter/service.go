@@ -98,8 +98,8 @@ func (s *Service) Save(ctx context.Context, nextState domain.State) (domain.Stat
 	return nextState, nil
 }
 
-func (s *Service) Check(ctx context.Context, family string, profileID string) (domain.Profile, HealthCheckResult, error) {
-	state, profile, err := s.loadProfile(ctx, family, profileID)
+func (s *Service) Check(ctx context.Context, family string, profileID string, draft *domain.Profile) (domain.Profile, HealthCheckResult, error) {
+	state, profile, shouldPersist, err := s.loadCheckProfile(ctx, family, profileID, draft)
 	if err != nil {
 		return domain.Profile{}, HealthCheckResult{}, err
 	}
@@ -122,15 +122,17 @@ func (s *Service) Check(ctx context.Context, family string, profileID string) (d
 		Summary: result.Summary,
 		Error:   result.Error,
 	}
-	if err := s.saveProfile(ctx, state, *profile); err != nil {
-		return domain.Profile{}, HealthCheckResult{}, err
+	if shouldPersist {
+		if err := s.saveProfile(ctx, state, *profile); err != nil {
+			return domain.Profile{}, HealthCheckResult{}, err
+		}
 	}
 
 	return *profile, result, nil
 }
 
-func (s *Service) DiscoverModels(ctx context.Context, family string, profileID string) (domain.Profile, ModelDiscoveryResult, error) {
-	state, profile, err := s.loadProfile(ctx, family, profileID)
+func (s *Service) DiscoverModels(ctx context.Context, family string, profileID string, draft *domain.Profile) (domain.Profile, ModelDiscoveryResult, error) {
+	state, profile, shouldPersist, err := s.loadCheckProfile(ctx, family, profileID, draft)
 	if err != nil {
 		return domain.Profile{}, ModelDiscoveryResult{}, err
 	}
@@ -152,11 +154,45 @@ func (s *Service) DiscoverModels(ctx context.Context, family string, profileID s
 	profile.ModelDiscovery.SupportsModelDiscovery = result.SupportsModelDiscovery
 	profile.ModelDiscovery.LastStatus = "success"
 	profile.ModelDiscovery.LastError = nil
-	if err := s.saveProfile(ctx, state, *profile); err != nil {
-		return domain.Profile{}, ModelDiscoveryResult{}, err
+	if shouldPersist {
+		if err := s.saveProfile(ctx, state, *profile); err != nil {
+			return domain.Profile{}, ModelDiscoveryResult{}, err
+		}
 	}
 
 	return *profile, result, nil
+}
+
+func (s *Service) loadCheckProfile(
+	ctx context.Context,
+	family string,
+	profileID string,
+	draft *domain.Profile,
+) (domain.State, *domain.Profile, bool, error) {
+	if draft == nil {
+		state, profile, err := s.loadProfile(ctx, family, profileID)
+		return state, profile, true, err
+	}
+
+	if family != "" && draft.Family != "" && draft.Family != family {
+		return domain.State{}, nil, false, errors.New("Provider Profile 标识格式无效")
+	}
+	if profileID != "" && draft.ID != "" && draft.ID != profileID {
+		return domain.State{}, nil, false, errors.New("Provider Profile 标识格式无效")
+	}
+
+	profileCopy := *draft
+	if profileCopy.Family == "" {
+		profileCopy.Family = family
+	}
+	if profileCopy.ID == "" {
+		profileCopy.ID = profileID
+	}
+	if profileCopy.Family == "" || profileCopy.ID == "" {
+		return domain.State{}, nil, false, errors.New("Provider Profile 标识格式无效")
+	}
+
+	return domain.State{}, &profileCopy, false, nil
 }
 
 func (s *Service) loadProfile(ctx context.Context, family string, profileID string) (domain.State, *domain.Profile, error) {

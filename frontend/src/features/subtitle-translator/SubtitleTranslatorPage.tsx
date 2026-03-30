@@ -106,13 +106,21 @@ export default function SubtitleTranslatorPage() {
     toast.success('已保存，将用于后续新任务');
   }
 
-  async function handleCheckProviderProfile(family: 'openai-compatible' | 'claude-compatible' | 'baidu', profileId: string) {
-    const result = await checkProviderProfile(family, profileId);
+  async function handleCheckProviderProfile(
+    family: 'openai-compatible' | 'claude-compatible' | 'baidu',
+    profileId: string,
+    profile: ProviderCenterProfile,
+  ) {
+    const result = await checkProviderProfile(family, profileId, profile);
     return result.profile as ProviderCenterProfile;
   }
 
-  async function handleLoadProviderModels(family: 'openai-compatible' | 'claude-compatible' | 'baidu', profileId: string) {
-    return fetchProviderProfileModelCatalog(family, profileId);
+  async function handleLoadProviderModels(
+    family: 'openai-compatible' | 'claude-compatible' | 'baidu',
+    profileId: string,
+    profile: ProviderCenterProfile,
+  ) {
+    return fetchProviderProfileModelCatalog(family, profileId, profile);
   }
 
   if (state.step === 'upload') {

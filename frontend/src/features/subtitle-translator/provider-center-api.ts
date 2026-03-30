@@ -99,13 +99,14 @@ export async function saveProviderCenterState(
 export async function checkProviderProfile(
   family: ProviderId,
   profileId: string,
+  profile?: ProviderCenterProfile,
 ): Promise<{ profile: ProviderCenterProfile; status: string; summary: string; error: string | null }> {
   const response = await fetch('/api/provider-center/check', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ family, profileId }),
+    body: JSON.stringify({ family, profileId, profile }),
   });
   const data = await parseJsonResponse(response);
   if (!response.ok) {
@@ -132,13 +133,14 @@ export async function checkProviderProfile(
 export async function fetchProviderProfileModelCatalog(
   family: ProviderId,
   profileId: string,
+  profile?: ProviderCenterProfile,
 ): Promise<{ profile: ProviderCenterProfile; models: ProviderCenterModel[]; summary: string }> {
   const response = await fetch('/api/provider-center/models/discover', {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ family, profileId }),
+    body: JSON.stringify({ family, profileId, profile }),
   });
   const data = await parseJsonResponse(response);
   if (!response.ok) {

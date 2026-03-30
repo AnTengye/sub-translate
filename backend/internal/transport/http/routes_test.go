@@ -23,7 +23,10 @@ func (f fakeProviderDefaultsReader) ReadProviderDefaults(context.Context) map[st
 }
 
 type fakeProviderCenterService struct {
-	state domainprovider.State
+	state          domainprovider.State
+	checkedFamily  string
+	checkedID      string
+	checkedProfile *domainprovider.Profile
 }
 
 func (f fakeProviderCenterService) Read(_ context.Context) (domainprovider.State, error) {
@@ -35,7 +38,17 @@ func (f fakeProviderCenterService) Save(_ context.Context, state domainprovider.
 	return state, nil
 }
 
-func (f fakeProviderCenterService) Check(_ context.Context, family string, profileID string) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error) {
+func (f *fakeProviderCenterService) Check(_ context.Context, family string, profileID string, profile *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error) {
+	f.checkedFamily = family
+	f.checkedID = profileID
+	f.checkedProfile = profile
+	if profile != nil {
+		return *profile, appprovidercenter.HealthCheckResult{
+			Status:  profile.Health.Status,
+			Summary: profile.Health.Summary,
+			Error:   profile.Health.Error,
+		}, nil
+	}
 	for _, profile := range f.state.Families[family].Profiles {
 		if profile.ID == profileID {
 			return profile, appprovidercenter.HealthCheckResult{
@@ -48,7 +61,14 @@ func (f fakeProviderCenterService) Check(_ context.Context, family string, profi
 	return domainprovider.Profile{}, appprovidercenter.HealthCheckResult{}, nil
 }
 
-func (f fakeProviderCenterService) DiscoverModels(_ context.Context, family string, profileID string) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error) {
+func (f *fakeProviderCenterService) DiscoverModels(_ context.Context, family string, profileID string, profile *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error) {
+	if profile != nil {
+		return *profile, appprovidercenter.ModelDiscoveryResult{
+			Models:                 profile.AvailableModels,
+			Summary:                "发现 0 个模型",
+			SupportsModelDiscovery: true,
+		}, nil
+	}
 	for _, profile := range f.state.Families[family].Profiles {
 		if profile.ID == profileID {
 			return profile, appprovidercenter.ModelDiscoveryResult{
@@ -126,17 +146,18 @@ func TestProviderDefaultsRouteReturnsConfiguredPayload(t *testing.T) {
 func TestProviderCenterRouteReturnsState(t *testing.T) {
 	t.Parallel()
 
-	handler := httpserver.NewServer(httpserver.Dependencies{
-		StaticFileHandler: http.NotFoundHandler(),
-		ProviderCenterService: fakeProviderCenterService{
-			state: domainprovider.State{
-				Version:         1,
-				DefaultProvider: "openai-compatible",
-				Families: map[string]domainprovider.Family{
-					"openai-compatible": {ID: "openai-compatible"},
-				},
+	service := &fakeProviderCenterService{
+		state: domainprovider.State{
+			Version:         1,
+			DefaultProvider: "openai-compatible",
+			Families: map[string]domainprovider.Family{
+				"openai-compatible": {ID: "openai-compatible"},
 			},
 		},
+	}
+	handler := httpserver.NewServer(httpserver.Dependencies{
+		StaticFileHandler:     http.NotFoundHandler(),
+		ProviderCenterService: service,
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/provider-center", nil)
@@ -146,6 +167,74 @@ func TestProviderCenterRouteReturnsState(t *testing.T) {
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+}
+
+func TestProviderCenterCheckRouteUsesDraftProfileFromRequest(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeProviderCenterService{
+		state: domainprovider.State{
+			Version:         1,
+			DefaultProvider: "openai-compatible",
+			Families: map[string]domainprovider.Family{
+				"openai-compatible": {
+					ID:              "openai-compatible",
+					ActiveProfileID: "saved-profile",
+					Profiles: []domainprovider.Profile{
+						{
+							ID:         "saved-profile",
+							Family:     "openai-compatible",
+							Name:       "Saved",
+							Connection: map[string]string{"apiEndpoint": "https://saved.example.com/v1", "apiKey": "saved-key"},
+							Health:     domainprovider.Health{Status: "idle", Summary: "saved"},
+						},
+					},
+				},
+			},
+		},
+	}
+	handler := httpserver.NewServer(httpserver.Dependencies{
+		StaticFileHandler:     http.NotFoundHandler(),
+		ProviderCenterService: service,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/provider-center/check", bytes.NewBufferString(`{
+		"family":"openai-compatible",
+		"profileId":"saved-profile",
+		"profile":{
+			"id":"saved-profile",
+			"family":"openai-compatible",
+			"name":"Draft",
+			"enabled":true,
+			"isDefault":true,
+			"connection":{"apiEndpoint":"https://draft.example.com/v1","apiKey":"draft-key"},
+			"settings":{"model":"gpt-4.1-mini"},
+			"capabilities":{"supportsConnectionCheck":true},
+			"models":[],
+			"modelDiscovery":{"sourceMode":"auto","supportsModelDiscovery":true,"lastCheckedAt":null,"lastStatus":"idle","lastError":null},
+			"health":{"status":"success","summary":"draft","lastCheckedAt":null,"error":null}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	if service.checkedProfile == nil {
+		t.Fatalf("expected draft profile to be forwarded to the service")
+	}
+
+	if got := service.checkedProfile.Connection["apiEndpoint"]; got != "https://draft.example.com/v1" {
+		t.Fatalf("expected draft endpoint to be used, got %q", got)
+	}
+
+	if got := service.checkedProfile.Connection["apiKey"]; got != "draft-key" {
+		t.Fatalf("expected draft api key to be used, got %q", got)
 	}
 }
 

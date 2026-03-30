@@ -20,8 +20,8 @@ type ProviderDefaultsReader interface {
 type ProviderCenterService interface {
 	Read(context.Context) (domainprovider.State, error)
 	Save(context.Context, domainprovider.State) (domainprovider.State, error)
-	Check(context.Context, string, string) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error)
-	DiscoverModels(context.Context, string, string) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error)
+	Check(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error)
+	DiscoverModels(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error)
 }
 
 type TranslateService interface {
@@ -73,11 +73,11 @@ func (defaultProviderCenterService) Save(_ context.Context, state domainprovider
 	return state, nil
 }
 
-func (defaultProviderCenterService) Check(context.Context, string, string) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error) {
+func (defaultProviderCenterService) Check(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error) {
 	return domainprovider.Profile{}, appprovidercenter.HealthCheckResult{}, errors.New("Provider Profile 标识格式无效")
 }
 
-func (defaultProviderCenterService) DiscoverModels(context.Context, string, string) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error) {
+func (defaultProviderCenterService) DiscoverModels(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error) {
 	return domainprovider.Profile{}, appprovidercenter.ModelDiscoveryResult{}, errors.New("Provider Profile 标识格式无效")
 }
 
@@ -159,14 +159,15 @@ func NewServer(deps Dependencies) http.Handler {
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/provider-center/check":
 			var payload struct {
-				Family    string `json:"family"`
-				ProfileID string `json:"profileId"`
+				Family    string                  `json:"family"`
+				ProfileID string                  `json:"profileId"`
+				Profile   *domainprovider.Profile `json:"profile"`
 			}
 			if err := decodeJSONBody(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, errors.New("请求体必须是合法 JSON"))
 				return
 			}
-			profile, result, err := providerCenterService.Check(r.Context(), payload.Family, payload.ProfileID)
+			profile, result, err := providerCenterService.Check(r.Context(), payload.Family, payload.ProfileID, payload.Profile)
 			if err != nil {
 				writeError(w, resolveStatusCode(err), err)
 				return
@@ -180,14 +181,15 @@ func NewServer(deps Dependencies) http.Handler {
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/provider-center/models/discover":
 			var payload struct {
-				Family    string `json:"family"`
-				ProfileID string `json:"profileId"`
+				Family    string                  `json:"family"`
+				ProfileID string                  `json:"profileId"`
+				Profile   *domainprovider.Profile `json:"profile"`
 			}
 			if err := decodeJSONBody(r, &payload); err != nil {
 				writeError(w, http.StatusBadRequest, errors.New("请求体必须是合法 JSON"))
 				return
 			}
-			profile, result, err := providerCenterService.DiscoverModels(r.Context(), payload.Family, payload.ProfileID)
+			profile, result, err := providerCenterService.DiscoverModels(r.Context(), payload.Family, payload.ProfileID, payload.Profile)
 			if err != nil {
 				writeError(w, resolveStatusCode(err), err)
 				return

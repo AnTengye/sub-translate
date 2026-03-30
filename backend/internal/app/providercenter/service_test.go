@@ -197,7 +197,7 @@ func TestDiscoverModelsKeepsSavedModelsAndExposesAvailableModels(t *testing.T) {
 		},
 	})
 
-	_, result, err := service.DiscoverModels(context.Background(), "openai-compatible", "profile-1")
+	_, result, err := service.DiscoverModels(context.Background(), "openai-compatible", "profile-1", nil)
 	if err != nil {
 		t.Fatalf("DiscoverModels() error = %v", err)
 	}
@@ -213,5 +213,78 @@ func TestDiscoverModelsKeepsSavedModelsAndExposesAvailableModels(t *testing.T) {
 
 	if len(profile.AvailableModels) != 1 || profile.AvailableModels[0].ID != "gpt-4.1-mini" {
 		t.Fatalf("expected available models to be updated, got %#v", profile.AvailableModels)
+	}
+}
+
+func TestCheckUsesDraftProfileWithoutPersistingRepositoryState(t *testing.T) {
+	t.Parallel()
+
+	repository := &stubRepository{
+		state: domainprovider.State{
+			Version:         1,
+			DefaultProvider: "openai-compatible",
+			Families: map[string]domainprovider.Family{
+				"openai-compatible": {
+					ID:              "openai-compatible",
+					ActiveProfileID: "profile-1",
+					Profiles: []domainprovider.Profile{
+						{
+							ID:     "profile-1",
+							Family: "openai-compatible",
+							Name:   "Saved OpenAI",
+							Connection: map[string]string{
+								"apiEndpoint": "https://saved.example.com/v1",
+								"apiKey":      "saved-key",
+							},
+							Health: domainprovider.Health{
+								Status:  "idle",
+								Summary: "saved",
+							},
+						},
+					},
+				},
+			},
+		},
+	}
+
+	service := providercenter.NewService(providercenter.Dependencies{
+		DefaultProvider: "openai-compatible",
+		Repository:      repository,
+		HealthChecker: stubHealthChecker{
+			status:  "success",
+			summary: "draft-ok",
+		},
+	})
+
+	draft := &domainprovider.Profile{
+		ID:     "profile-1",
+		Family: "openai-compatible",
+		Name:   "Draft OpenAI",
+		Connection: map[string]string{
+			"apiEndpoint": "https://draft.example.com/v1",
+			"apiKey":      "draft-key",
+		},
+		Health: domainprovider.Health{
+			Status:  "idle",
+			Summary: "draft",
+		},
+	}
+
+	profile, result, err := service.Check(context.Background(), "openai-compatible", "profile-1", draft)
+	if err != nil {
+		t.Fatalf("Check() error = %v", err)
+	}
+
+	if got := profile.Connection["apiEndpoint"]; got != "https://draft.example.com/v1" {
+		t.Fatalf("expected draft endpoint to be checked, got %q", got)
+	}
+
+	if result.Summary != "draft-ok" {
+		t.Fatalf("expected updated summary, got %q", result.Summary)
+	}
+
+	saved := repository.state.Families["openai-compatible"].Profiles[0]
+	if got := saved.Connection["apiEndpoint"]; got != "https://saved.example.com/v1" {
+		t.Fatalf("expected repository state to remain saved version, got %q", got)
 	}
 }

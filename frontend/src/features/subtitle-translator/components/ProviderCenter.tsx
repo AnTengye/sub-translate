@@ -12,10 +12,11 @@ interface ProviderCenterProps {
   disableSave: boolean;
   onClose: () => void;
   onSave: (draft: ProviderCenterStateData) => Promise<void> | void;
-  onCheck: (family: ProviderId, profileId: string) => Promise<ProviderCenterProfile>;
+  onCheck: (family: ProviderId, profileId: string, profile: ProviderCenterProfile) => Promise<ProviderCenterProfile>;
   onLoadModelCatalog: (
     family: ProviderId,
     profileId: string,
+    profile: ProviderCenterProfile,
   ) => Promise<{ profile: ProviderCenterProfile; models: ProviderCenterModel[]; summary: string }>;
 }
 
@@ -344,7 +345,7 @@ export function ProviderCenter({
 
   async function handleCheck() {
     try {
-      const updated = await checkAction.run(() => onCheck(selectedRef.family, activeProfile.id));
+      const updated = await checkAction.run(() => onCheck(selectedRef.family, activeProfile.id, activeProfile));
       updateProfile(() => updated);
       toast.success(updated.health.summary);
     } catch (error) {
@@ -721,7 +722,7 @@ export function ProviderCenter({
           profile={activeProfile}
           onClose={() => setModelManagerOpen(false)}
           onLoadCatalog={async (family, profileId) => {
-            const result = await onLoadModelCatalog(family, profileId);
+            const result = await onLoadModelCatalog(family, profileId, activeProfile);
             updateProfile(() => result.profile);
             toast.info(result.summary);
             return result;
