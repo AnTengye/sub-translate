@@ -10,18 +10,30 @@ import (
 type TranslateInput struct {
 	RunID            string
 	ProfileID        string
+	Operation        string
 	Texts            []string
 	ContextTexts     []string
+	DraftTexts       []string
+	CandidateSets    []JudgeCandidate
 	Batch            map[string]any
 	Options          map[string]any
 	RuntimeOverrides map[string]any
 }
 
+type JudgeCandidate struct {
+	Key   string
+	Label string
+	Texts []string
+}
+
 type Request struct {
 	RunID            string
 	ProfileID        string
+	Operation        string
 	Texts            []string
 	ContextTexts     []string
+	DraftTexts       []string
+	CandidateSets    []JudgeCandidate
 	Batch            map[string]any
 	Options          map[string]any
 	RuntimeOverrides map[string]any
@@ -30,6 +42,7 @@ type Request struct {
 type Result struct {
 	Translations []string
 	Debug        map[string]any
+	Metadata     map[string]any
 }
 
 type Translator interface {
@@ -79,8 +92,11 @@ func (s *Service) Translate(ctx context.Context, provider string, input Translat
 	request := Request{
 		RunID:            input.RunID,
 		ProfileID:        input.ProfileID,
+		Operation:        input.Operation,
 		Texts:            input.Texts,
 		ContextTexts:     input.ContextTexts,
+		DraftTexts:       cloneStrings(input.DraftTexts),
+		CandidateSets:    cloneCandidateSets(input.CandidateSets),
 		Batch:            cloneMap(input.Batch),
 		Options:          cloneMap(input.Options),
 		RuntimeOverrides: cloneMap(input.RuntimeOverrides),
@@ -218,5 +234,31 @@ func cloneMap(input map[string]any) map[string]any {
 		cloned[key] = value
 	}
 
+	return cloned
+}
+
+func cloneStrings(input []string) []string {
+	if input == nil {
+		return nil
+	}
+
+	cloned := make([]string, len(input))
+	copy(cloned, input)
+	return cloned
+}
+
+func cloneCandidateSets(input []JudgeCandidate) []JudgeCandidate {
+	if input == nil {
+		return nil
+	}
+
+	cloned := make([]JudgeCandidate, len(input))
+	for index, candidate := range input {
+		cloned[index] = JudgeCandidate{
+			Key:   candidate.Key,
+			Label: candidate.Label,
+			Texts: cloneStrings(candidate.Texts),
+		}
+	}
 	return cloned
 }

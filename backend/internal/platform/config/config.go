@@ -10,6 +10,7 @@ type Config struct {
 	Port                    string
 	DistDir                 string
 	DatabasePath            string
+	WorkflowTemplatesPath   string
 	LogDir                  string
 	TranslateMaxConcurrency int
 	ProviderRequestTimeout  time.Duration
@@ -37,6 +38,7 @@ func LoadFromEnv() Config {
 		Port:                    fallback(os.Getenv("PORT"), "3000"),
 		DistDir:                 fallback(os.Getenv("DIST_DIR"), "frontend/dist"),
 		DatabasePath:            fallback(os.Getenv("DATABASE_PATH"), "data/app.db"),
+		WorkflowTemplatesPath:   fallback(os.Getenv("WORKFLOW_TEMPLATES_PATH"), "data/workflow_templates.json"),
 		LogDir:                  fallback(os.Getenv("LOG_DIR"), "logs/translations"),
 		TranslateMaxConcurrency: parseInt(os.Getenv("TRANSLATE_MAX_CONCURRENCY"), 10),
 		ProviderRequestTimeout:  parseDuration(os.Getenv("PROVIDER_REQUEST_TIMEOUT"), 90*time.Second),

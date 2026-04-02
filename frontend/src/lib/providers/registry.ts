@@ -1,6 +1,7 @@
 import { providerDefinitions } from './definitions';
 import {
   createProxyTranslationRun,
+  executeWorkflowNodeViaProxy,
   finalizeProxyTranslationRun,
   translateViaProxy,
 } from './adapters/proxy';
@@ -10,6 +11,7 @@ import type {
   ProviderRuntimeOverrides,
   TranslationBatchMetadata,
   TranslationRunCreatePayload,
+  WorkflowCandidateSet,
 } from './types';
 
 const definitionsById = new Map<ProviderId, ProviderDefinition>(
@@ -72,4 +74,23 @@ export async function dispatchTranslate(
     runtimeOverrides,
     signal,
   );
+}
+
+export async function executeWorkflowNode(
+  provider: ProviderId,
+  payload: {
+    operation: 'translate' | 'review' | 'judge';
+    profileId: string | null;
+    texts: string[];
+    contextTexts: string[];
+    batch: TranslationBatchMetadata;
+    runId: string;
+    config: Record<string, string>;
+    runtimeOverrides: ProviderRuntimeOverrides;
+    draftTexts?: string[];
+    candidateSets?: WorkflowCandidateSet[];
+  },
+  signal: AbortSignal,
+): Promise<{ translations: string[]; metadata?: Record<string, unknown> }> {
+  return executeWorkflowNodeViaProxy(provider, payload, signal);
 }

@@ -11,6 +11,7 @@ import (
 	appprovidercenter "srt-translate/internal/app/providercenter"
 	apptranslate "srt-translate/internal/app/translate"
 	domainprovider "srt-translate/internal/domain/providercenter"
+	domainworkflow "srt-translate/internal/domain/workflow"
 	httpserver "srt-translate/internal/transport/http"
 )
 
@@ -81,16 +82,44 @@ func (f *fakeProviderCenterService) DiscoverModels(_ context.Context, family str
 	return domainprovider.Profile{}, appprovidercenter.ModelDiscoveryResult{}, nil
 }
 
-type fakeTranslateService struct{}
+type fakeTranslateService struct {
+	lastProvider string
+	lastInput    apptranslate.TranslateInput
+}
 
-func (fakeTranslateService) Translate(_ context.Context, provider string, input apptranslate.TranslateInput) (apptranslate.Result, error) {
-	return apptranslate.Result{
+func (f *fakeTranslateService) Translate(_ context.Context, provider string, input apptranslate.TranslateInput) (apptranslate.Result, error) {
+	f.lastProvider = provider
+	f.lastInput = input
+
+	result := apptranslate.Result{
 		Translations: []string{"你好"},
 		Debug: map[string]any{
 			"provider": provider,
 			"runId":    input.RunID,
 		},
-	}, nil
+	}
+	if input.Operation == "judge" {
+		result.Metadata = map[string]any{
+			"decisions": []map[string]any{
+				{"winner": "A", "reason": "更自然"},
+			},
+		}
+	}
+
+	return result, nil
+}
+
+type fakeWorkflowTemplateService struct {
+	state domainworkflow.State
+}
+
+func (f fakeWorkflowTemplateService) Read(context.Context) (domainworkflow.State, error) {
+	return f.state, nil
+}
+
+func (f fakeWorkflowTemplateService) Save(_ context.Context, state domainworkflow.State) (domainworkflow.State, error) {
+	f.state = state
+	return state, nil
 }
 
 type fakeRunLogger struct {
@@ -260,9 +289,10 @@ func TestTranslationRunAndTranslateRoutes(t *testing.T) {
 	t.Parallel()
 
 	logger := &fakeRunLogger{}
+	translateService := &fakeTranslateService{}
 	handler := httpserver.NewServer(httpserver.Dependencies{
 		StaticFileHandler:    http.NotFoundHandler(),
-		TranslateService:     fakeTranslateService{},
+		TranslateService:     translateService,
 		TranslationRunLogger: logger,
 	})
 
@@ -325,5 +355,117 @@ func TestTranslationRunAndTranslateRoutes(t *testing.T) {
 
 	if logger.finalizedID != "run-1" {
 		t.Fatalf("expected finalized run id run-1, got %q", logger.finalizedID)
+	}
+
+	if translateService.lastProvider != "openai-compatible" {
+		t.Fatalf("expected provider to be forwarded, got %q", translateService.lastProvider)
+	}
+}
+
+func TestWorkflowTemplateRoutes(t *testing.T) {
+	t.Parallel()
+
+	service := fakeWorkflowTemplateService{
+		state: domainworkflow.State{
+			Version: 1,
+			Templates: []domainworkflow.Template{
+				{
+					ID:   "quality",
+					Name: "质量优先",
+					Stages: []domainworkflow.Stage{
+						{ID: "translate", Name: "主翻译", Type: "translate", Execution: "serial", Strategy: "fallback"},
+					},
+				},
+			},
+		},
+	}
+	handler := httpserver.NewServer(httpserver.Dependencies{
+		StaticFileHandler:       http.NotFoundHandler(),
+		WorkflowTemplateService: service,
+	})
+
+	readReq := httptest.NewRequest(http.MethodGet, "/api/workflow-templates", nil)
+	readRec := httptest.NewRecorder()
+	handler.ServeHTTP(readRec, readReq)
+
+	if readRec.Code != http.StatusOK {
+		t.Fatalf("expected read status %d, got %d", http.StatusOK, readRec.Code)
+	}
+
+	saveReq := httptest.NewRequest(http.MethodPut, "/api/workflow-templates", bytes.NewBufferString(`{
+		"version":1,
+		"templates":[
+			{
+				"id":"compare",
+				"name":"双路比对",
+				"description":"parallel compare",
+				"scenario":"comparison",
+				"stages":[
+					{"id":"translate","name":"候选翻译","type":"translate","execution":"parallel","strategy":"keep-all","nodes":[]}
+				]
+			}
+		]
+	}`))
+	saveReq.Header.Set("Content-Type", "application/json")
+	saveRec := httptest.NewRecorder()
+	handler.ServeHTTP(saveRec, saveReq)
+
+	if saveRec.Code != http.StatusOK {
+		t.Fatalf("expected save status %d, got %d", http.StatusOK, saveRec.Code)
+	}
+
+	var payload domainworkflow.State
+	if err := json.Unmarshal(saveRec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if len(payload.Templates) != 1 || payload.Templates[0].ID != "compare" {
+		t.Fatalf("unexpected workflow payload %#v", payload)
+	}
+}
+
+func TestJudgeTranslateRouteReturnsMetadataAndWorkflowPayload(t *testing.T) {
+	t.Parallel()
+
+	translateService := &fakeTranslateService{}
+	handler := httpserver.NewServer(httpserver.Dependencies{
+		StaticFileHandler: http.NotFoundHandler(),
+		TranslateService:  translateService,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/translate/openai-compatible", bytes.NewBufferString(`{
+		"runId":"run-judge-1",
+		"operation":"judge",
+		"texts":["こんにちは"],
+		"candidateSets":[
+			{"key":"A","label":"候选 A","texts":["你好"]},
+			{"key":"B","label":"候选 B","texts":["您好"]}
+		],
+		"options":{"model":"gpt-4o-mini"}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+
+	if translateService.lastInput.Operation != "judge" {
+		t.Fatalf("expected judge operation to be forwarded, got %q", translateService.lastInput.Operation)
+	}
+
+	if len(translateService.lastInput.CandidateSets) != 2 {
+		t.Fatalf("expected candidate sets to be forwarded, got %#v", translateService.lastInput.CandidateSets)
+	}
+
+	var payload map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &payload); err != nil {
+		t.Fatalf("json.Unmarshal() error = %v", err)
+	}
+
+	if _, ok := payload["metadata"].(map[string]any); !ok {
+		t.Fatalf("expected metadata payload, got %#v", payload)
 	}
 }

@@ -5,12 +5,15 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
+	"time"
 
 	appprovidercenter "srt-translate/internal/app/providercenter"
 	apptranslate "srt-translate/internal/app/translate"
 	domainprovider "srt-translate/internal/domain/providercenter"
+	domainworkflow "srt-translate/internal/domain/workflow"
 )
 
 type ProviderDefaultsReader interface {
@@ -22,6 +25,11 @@ type ProviderCenterService interface {
 	Save(context.Context, domainprovider.State) (domainprovider.State, error)
 	Check(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error)
 	DiscoverModels(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error)
+}
+
+type WorkflowTemplateService interface {
+	Read(context.Context) (domainworkflow.State, error)
+	Save(context.Context, domainworkflow.State) (domainworkflow.State, error)
 }
 
 type TranslateService interface {
@@ -87,6 +95,19 @@ func (defaultTranslateService) Translate(context.Context, string, apptranslate.T
 	return apptranslate.Result{}, errors.New("不支持的翻译引擎")
 }
 
+type defaultWorkflowTemplateService struct{}
+
+func (defaultWorkflowTemplateService) Read(context.Context) (domainworkflow.State, error) {
+	return domainworkflow.State{Version: 1, Templates: []domainworkflow.Template{}}, nil
+}
+
+func (defaultWorkflowTemplateService) Save(_ context.Context, state domainworkflow.State) (domainworkflow.State, error) {
+	if state.Version == 0 {
+		state.Version = 1
+	}
+	return state, nil
+}
+
 type defaultTranslationRunLogger struct{}
 
 func (defaultTranslationRunLogger) CreateRun(context.Context, CreateRunPayload) (string, string, error) {
@@ -102,11 +123,22 @@ func (defaultTranslationRunLogger) FinalizeRun(context.Context, string, Finalize
 }
 
 type Dependencies struct {
-	StaticFileHandler      http.Handler
-	ProviderDefaultsReader ProviderDefaultsReader
-	ProviderCenterService  ProviderCenterService
-	TranslateService       TranslateService
-	TranslationRunLogger   TranslationRunLogger
+	StaticFileHandler       http.Handler
+	ProviderDefaultsReader  ProviderDefaultsReader
+	ProviderCenterService   ProviderCenterService
+	WorkflowTemplateService WorkflowTemplateService
+	TranslateService        TranslateService
+	TranslationRunLogger    TranslationRunLogger
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
 }
 
 func NewServer(deps Dependencies) http.Handler {
@@ -122,6 +154,10 @@ func NewServer(deps Dependencies) http.Handler {
 	if providerCenterService == nil {
 		providerCenterService = defaultProviderCenterService{}
 	}
+	workflowTemplateService := deps.WorkflowTemplateService
+	if workflowTemplateService == nil {
+		workflowTemplateService = defaultWorkflowTemplateService{}
+	}
 	translateService := deps.TranslateService
 	if translateService == nil {
 		translateService = defaultTranslateService{}
@@ -131,13 +167,34 @@ func NewServer(deps Dependencies) http.Handler {
 		runLogger = defaultTranslationRunLogger{}
 	}
 
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/provider-profiles/defaults":
 			writeJSON(w, http.StatusOK, providerDefaultsReader.ReadProviderDefaults(r.Context()))
 			return
 		case r.Method == http.MethodGet && r.URL.Path == "/api/provider-center":
 			state, err := providerCenterService.Read(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, state)
+			return
+		case r.Method == http.MethodGet && r.URL.Path == "/api/workflow-templates":
+			state, err := workflowTemplateService.Read(r.Context())
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, state)
+			return
+		case r.Method == http.MethodPut && r.URL.Path == "/api/workflow-templates":
+			var payload domainworkflow.State
+			if err := decodeJSONBody(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("请求体必须是合法 JSON"))
+				return
+			}
+			state, err := workflowTemplateService.Save(r.Context(), payload)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
@@ -169,9 +226,11 @@ func NewServer(deps Dependencies) http.Handler {
 			}
 			profile, result, err := providerCenterService.Check(r.Context(), payload.Family, payload.ProfileID, payload.Profile)
 			if err != nil {
+				log.Printf("[Provider] Check Error: %s %s - %v", payload.Family, payload.ProfileID, err)
 				writeError(w, resolveStatusCode(err), err)
 				return
 			}
+			log.Printf("[Provider] Check Success: %s %s", payload.Family, payload.ProfileID)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"profile": profile,
 				"status":  result.Status,
@@ -191,9 +250,11 @@ func NewServer(deps Dependencies) http.Handler {
 			}
 			profile, result, err := providerCenterService.DiscoverModels(r.Context(), payload.Family, payload.ProfileID, payload.Profile)
 			if err != nil {
+				log.Printf("[Provider] DiscoverModels Error: %s %s - %v", payload.Family, payload.ProfileID, err)
 				writeError(w, resolveStatusCode(err), err)
 				return
 			}
+			log.Printf("[Provider] DiscoverModels Success: %s %s, found %d models", payload.Family, payload.ProfileID, len(result.Models))
 			writeJSON(w, http.StatusOK, map[string]any{
 				"profile": profile,
 				"models":  result.Models,
@@ -208,9 +269,11 @@ func NewServer(deps Dependencies) http.Handler {
 			}
 			runID, filePath, err := runLogger.CreateRun(r.Context(), payload)
 			if err != nil {
+				log.Printf("[Run] CreateRun Error: %v", err)
 				writeError(w, resolveStatusCode(err), err)
 				return
 			}
+			log.Printf("[Run] Created Run: %s, file: %s, total entries: %d", runID, filePath, payload.TotalEntries)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"runId":    runID,
 				"filePath": filePath,
@@ -224,9 +287,11 @@ func NewServer(deps Dependencies) http.Handler {
 			}
 			runID := strings.TrimSuffix(strings.TrimPrefix(r.URL.Path, "/api/translation-runs/"), "/finalize")
 			if err := runLogger.FinalizeRun(r.Context(), runID, payload); err != nil {
+				log.Printf("[Run] FinalizeRun Error: %s - %v", runID, err)
 				writeError(w, resolveStatusCode(err), err)
 				return
 			}
+			log.Printf("[Run] Finalized Run: %s, status: %s", runID, payload.Status)
 			writeJSON(w, http.StatusOK, map[string]any{
 				"runId": runID,
 			})
@@ -246,30 +311,77 @@ func NewServer(deps Dependencies) http.Handler {
 				writeError(w, http.StatusBadRequest, errors.New("至少提供一条待翻译字幕"))
 				return
 			}
+
+			batchSeq := float64(0)
+			if val, ok := payload.Batch["sequence"].(float64); ok {
+				batchSeq = val
+			}
+			batchKind := ""
+			if val, ok := payload.Batch["kind"].(string); ok {
+				batchKind = val
+			}
+
+			log.Printf("[Translate] [%s] Starting batch %v - Run: %s, Provider: %s, Entries: %d, Operation: %s", batchKind, batchSeq, payload.RunID, provider, len(payload.Texts), payload.Operation)
+
+			start := time.Now()
 			result, err := translateService.Translate(r.Context(), provider, payload)
+			duration := time.Since(start)
+
 			if err != nil {
+				log.Printf("[Translate] [%s] Error batch %v - Run: %s, Error: %v", batchKind, batchSeq, payload.RunID, err)
 				writeError(w, resolveStatusCode(err), err)
 				return
 			}
+
+			successCount := 0
+			for _, t := range result.Translations {
+				if t != "" && t != "[翻译失败]" {
+					successCount++
+				}
+			}
+
+			log.Printf("[Translate] [%s] Completed batch %v - Run: %s, Success: %d/%d, Duration: %v", batchKind, batchSeq, payload.RunID, successCount, len(result.Translations), duration)
+
 			if payload.RunID != "" {
 				_ = runLogger.AppendBatch(r.Context(), payload.RunID, map[string]any{
 					"provider": provider,
 					"request": map[string]any{
-						"texts":        payload.Texts,
-						"contextTexts": payload.ContextTexts,
-						"options":      payload.Options,
+						"operation":     payload.Operation,
+						"texts":         payload.Texts,
+						"contextTexts":  payload.ContextTexts,
+						"draftTexts":    payload.DraftTexts,
+						"candidateSets": payload.CandidateSets,
+						"options":       payload.Options,
 					},
 					"response": map[string]any{
 						"translations": result.Translations,
+						"metadata":     result.Metadata,
 					},
 					"debug": result.Debug,
 				})
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"translations": result.Translations})
+			writeJSON(w, http.StatusOK, map[string]any{
+				"translations": result.Translations,
+				"metadata":     result.Metadata,
+			})
 			return
 		default:
 			staticHandler.ServeHTTP(w, r)
 		}
+	})
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			handler.ServeHTTP(w, r)
+			return
+		}
+
+		start := time.Now()
+		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+		handler.ServeHTTP(lrw, r)
+		duration := time.Since(start)
+
+		log.Printf("[HTTP] %s %s - %d (%v)", r.Method, r.URL.Path, lrw.statusCode, duration)
 	})
 }
 
@@ -310,7 +422,7 @@ func decodeJSONBody(r *http.Request, target any) error {
 
 func resolveStatusCode(err error) int {
 	switch err.Error() {
-	case "不支持的翻译引擎", "请求体必须是合法 JSON", "至少提供一条待翻译字幕", "Provider Profile 标识格式无效":
+	case "不支持的翻译引擎", "请求体必须是合法 JSON", "至少提供一条待翻译字幕", "Provider Profile 标识格式无效", "不支持的工作流节点操作":
 		return http.StatusBadRequest
 	case "翻译任务不存在":
 		return http.StatusNotFound

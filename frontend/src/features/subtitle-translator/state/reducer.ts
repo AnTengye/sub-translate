@@ -9,6 +9,7 @@ import type {
 } from '../types';
 import { loadProviderProfiles, type ProviderProfileStorageData } from '../config-storage';
 import type { ProviderCenterStateData } from '../provider-center-api';
+import { cloneWorkflowTemplate, type WorkflowTemplateStateData } from '../workflow-types';
 import {
   ensureDistinctTarget,
   getDefaultTargets,
@@ -21,6 +22,9 @@ export type SubtitleTranslatorAction =
   | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
   | { type: 'hydrateProviderCenter'; providerCenter: ProviderCenterStateData }
+  | { type: 'hydrateWorkflowTemplates'; workflowTemplates: WorkflowTemplateStateData }
+  | { type: 'selectWorkflowTemplate'; templateId: string }
+  | { type: 'setWorkflowNodeTarget'; stageId: string; nodeId: string; target: ProviderTarget | null }
   | { type: 'replaceProviderProfiles'; providerProfiles: ProviderProfileStorageData }
   | { type: 'setPrimaryTarget'; target: ProviderTarget | null }
   | { type: 'setFallbackTarget'; target: ProviderTarget | null }
@@ -60,6 +64,12 @@ export function createInitialState(
     display: [],
     providerCenter: null,
     providerProfiles,
+    workflowTemplates: {
+      version: 1,
+      templates: [],
+    },
+    activeTemplateId: null,
+    workflowDraft: null,
     primaryTarget: null,
     fallbackTarget: null,
     translationConfig: {
@@ -118,6 +128,52 @@ export function subtitleTranslatorReducer(
         fallbackTarget: targets.fallbackTarget,
       };
     }
+    case 'hydrateWorkflowTemplates': {
+      const firstTemplate = action.workflowTemplates.templates[0] ?? null;
+      return {
+        ...state,
+        workflowTemplates: action.workflowTemplates,
+        activeTemplateId: firstTemplate?.id ?? null,
+        workflowDraft: firstTemplate ? cloneWorkflowTemplate(firstTemplate) : null,
+      };
+    }
+    case 'selectWorkflowTemplate': {
+      const template =
+        state.workflowTemplates.templates.find((item) => item.id === action.templateId) ?? null;
+      return {
+        ...state,
+        activeTemplateId: template?.id ?? null,
+        workflowDraft: template ? cloneWorkflowTemplate(template) : null,
+      };
+    }
+    case 'setWorkflowNodeTarget':
+      if (!state.workflowDraft) {
+        return state;
+      }
+
+      return {
+        ...state,
+        workflowDraft: {
+          ...state.workflowDraft,
+          stages: state.workflowDraft.stages.map((stage) => {
+            if (stage.id !== action.stageId) {
+              return stage;
+            }
+
+            return {
+              ...stage,
+              nodes: stage.nodes.map((node) =>
+                node.id === action.nodeId
+                  ? {
+                      ...node,
+                      target: action.target ? { ...action.target } : null,
+                    }
+                  : node,
+              ),
+            };
+          }),
+        },
+      };
     case 'replaceProviderProfiles':
       return {
         ...state,

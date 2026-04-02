@@ -58,3 +58,22 @@ export interface TranslationRunCreatePayload {
   };
   mode: 'translate' | 'retry-all' | 'retry-single';
 }
+
+export interface WorkflowCandidateSet {
+  key: string;
+  label: string;
+  texts: string[];
+}
+
+export interface WorkflowNodeExecutionPayload {
+  operation: 'translate' | 'review' | 'judge';
+  profileId: string | null;
+  texts: string[];
+  contextTexts: string[];
+  batch: TranslationBatchMetadata;
+  runId: string;
+  config: Record<string, string>;
+  runtimeOverrides: ProviderRuntimeOverrides;
+  draftTexts?: string[];
+  candidateSets?: WorkflowCandidateSet[];
+}

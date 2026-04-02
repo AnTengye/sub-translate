@@ -74,6 +74,7 @@ describe('provider registry', () => {
     );
     const [, requestInit] = vi.mocked(fetch).mock.calls[0];
     expect(JSON.parse(String(requestInit?.body))).toEqual({
+      operation: 'translate',
       profileId: 'openai-compatible-default',
       runId: 'run-123',
       texts: ['こんにちは'],

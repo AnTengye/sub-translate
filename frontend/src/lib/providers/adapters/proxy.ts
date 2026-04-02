@@ -3,6 +3,7 @@ import type {
   ProviderRuntimeOverrides,
   TranslationBatchMetadata,
   TranslationRunCreatePayload,
+  WorkflowNodeExecutionPayload,
 } from '../types';
 import { normalizeTranslationItems } from '../response';
 
@@ -84,6 +85,25 @@ export async function translateViaProxy(
   runtimeOverrides: ProviderRuntimeOverrides,
   signal: AbortSignal,
 ): Promise<string[]> {
+  const result = await executeWorkflowNodeViaProxy(provider, {
+    operation: 'translate',
+    profileId,
+    texts,
+    contextTexts,
+    batch,
+    runId,
+    config,
+    runtimeOverrides,
+  }, signal);
+
+  return result.translations;
+}
+
+export async function executeWorkflowNodeViaProxy(
+  provider: ProviderId,
+  payload: WorkflowNodeExecutionPayload,
+  signal: AbortSignal,
+): Promise<{ translations: string[]; metadata?: Record<string, unknown> }> {
   const response = await fetch(`/api/translate/${provider}`, {
     method: 'POST',
     signal,
@@ -91,13 +111,16 @@ export async function translateViaProxy(
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
-      profileId: profileId ?? undefined,
-      runId,
-      texts,
-      contextTexts,
-      batch,
-      options: config,
-      runtimeOverrides,
+      operation: payload.operation,
+      profileId: payload.profileId ?? undefined,
+      runId: payload.runId,
+      texts: payload.texts,
+      contextTexts: payload.contextTexts,
+      draftTexts: payload.draftTexts,
+      candidateSets: payload.candidateSets,
+      batch: payload.batch,
+      options: payload.config,
+      runtimeOverrides: payload.runtimeOverrides,
     }),
   });
 
@@ -110,5 +133,11 @@ export async function translateViaProxy(
     throw new Error('代理返回格式无效');
   }
 
-  return normalizeTranslationItems(data.translations, texts.length);
+  return {
+    translations: normalizeTranslationItems(data.translations, payload.texts.length),
+    metadata:
+      data.metadata && typeof data.metadata === 'object'
+        ? (data.metadata as Record<string, unknown>)
+        : undefined,
+  };
 }

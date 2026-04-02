@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import type { TranslationLogEntry } from '../types';
 
 interface ActivityConsoleProps {
@@ -6,11 +6,15 @@ interface ActivityConsoleProps {
 }
 
 function getMessageTone(message: string) {
-  if (message.includes('成功') || message.includes('完成')) {
+  if (message.includes('❌') || message.includes('错误') || message.includes('出错')) {
+    return 'warn';
+  }
+
+  if (message.includes('成功') || message.includes('完成') || message.includes('✅')) {
     return 'ok';
   }
 
-  if (message.includes('重试') || message.includes('等待') || message.includes('失败')) {
+  if (message.includes('重试') || message.includes('等待') || message.includes('失败') || message.includes('⚠️')) {
     return 'warn';
   }
 
@@ -19,14 +23,25 @@ function getMessageTone(message: string) {
 
 export function ActivityConsole({ logs }: ActivityConsoleProps) {
   const [expanded, setExpanded] = useState(false);
-  const visibleLogs = expanded ? logs : logs.slice(-3);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const visibleLogs = logs;
+
+  useEffect(() => {
+    if (expanded && bodyRef.current)  {
+      const { scrollTop, scrollHeight, clientHeight } = bodyRef.current;
+      // Auto-scroll if we are close to the bottom (within 40px threshold)
+      if (scrollHeight - scrollTop - clientHeight < 40) {
+        bodyRef.current.scrollTop = scrollHeight;
+      }
+    }
+  }, [logs, expanded]);
 
   return (
     <div className="log-panel">
       <div className="log-header">
         <div className="log-title">
           <div className="rec-dot" />
-          实时运行日志
+          实时运行日志 {logs.length > 0 ? `(${logs.length})` : ''}
         </div>
         <button
           className="log-toggle"
@@ -40,6 +55,7 @@ export function ActivityConsole({ logs }: ActivityConsoleProps) {
       </div>
       <div
         id="activity-console-body"
+        ref={bodyRef}
         className={`log-body${expanded ? ' expanded' : ''}`}
       >
         {visibleLogs.length === 0 ? (
@@ -48,8 +64,8 @@ export function ActivityConsole({ logs }: ActivityConsoleProps) {
             <span className="log-msg info">已加载工作台，等待翻译任务启动</span>
           </div>
         ) : (
-          visibleLogs.map((log) => (
-            <div key={`${log.t}-${log.msg}`} className="log-line">
+          visibleLogs.map((log, index) => (
+            <div key={`${log.t}-${index}`} className="log-line">
               <span className="log-time">{log.t}</span>
               <span className={`log-msg ${getMessageTone(log.msg)}`}>{log.msg}</span>
             </div>

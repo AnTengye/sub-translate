@@ -47,7 +47,10 @@ func (t OpenAICompatibleTranslator) Translate(ctx context.Context, request apptr
 		return apptranslate.Result{}, errors.New("服务端未配置 OPENAI_API_KEY")
 	}
 
-	system, user := buildTranslationMessages(request.Texts, request.ContextTexts)
+	system, user, err := buildOperationMessages(request)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
 	model := firstNonEmpty(stringValue(request.Options["model"]), "gpt-4o-mini")
 	payload := map[string]any{
 		"model":       model,
@@ -97,8 +100,13 @@ func (t OpenAICompatibleTranslator) Translate(ctx context.Context, request apptr
 		rawText = body.Choices[0].Message.Content
 	}
 
+	translations, metadata, err := parseOperationResponse(request, rawText)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+
 	return apptranslate.Result{
-		Translations: ParseTranslationResponse(rawText, len(request.Texts)),
+		Translations: translations,
 		Debug: map[string]any{
 			"request": map[string]any{
 				"endpoint": endpoint + "/chat/completions",
@@ -113,6 +121,7 @@ func (t OpenAICompatibleTranslator) Translate(ctx context.Context, request apptr
 				"rawText": rawText,
 			},
 		},
+		Metadata: metadata,
 	}, nil
 }
 
@@ -123,7 +132,10 @@ func (t ClaudeCompatibleTranslator) Translate(ctx context.Context, request apptr
 		return apptranslate.Result{}, errors.New("服务端未配置 CLAUDE_API_KEY")
 	}
 
-	system, user := buildTranslationMessages(request.Texts, request.ContextTexts)
+	system, user, err := buildOperationMessages(request)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
 	payload := map[string]any{
 		"model":      firstNonEmpty(stringValue(request.Options["model"]), "claude-3-5-sonnet-latest"),
 		"max_tokens": 2048,
@@ -166,8 +178,13 @@ func (t ClaudeCompatibleTranslator) Translate(ctx context.Context, request apptr
 		rawText = body.Content[0].Text
 	}
 
+	translations, metadata, err := parseOperationResponse(request, rawText)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+
 	return apptranslate.Result{
-		Translations: ParseTranslationResponse(rawText, len(request.Texts)),
+		Translations: translations,
 		Debug: map[string]any{
 			"request": map[string]any{
 				"endpoint": endpoint + "/messages",
@@ -183,6 +200,7 @@ func (t ClaudeCompatibleTranslator) Translate(ctx context.Context, request apptr
 				"rawText": rawText,
 			},
 		},
+		Metadata: metadata,
 	}, nil
 }
 
@@ -309,6 +327,80 @@ func buildTranslationMessages(texts []string, contextTexts []string) (string, st
 
 	user := contextBlock + "\n【待翻译字幕】\n" + strings.Join(lines, "\n") + "\n\n以JSON数组返回翻译结果："
 	return system, user
+}
+
+func buildReviewMessages(texts []string, draftTexts []string, contextTexts []string, prompt string) (string, string) {
+	system := "你是专业的中文字幕校对员。请参考原文日语和当前中文字幕，对中文字幕进行润色校对。\n规则：修正错译、漏译和不自然表达；保持字幕简洁；不要添加解释；必须严格返回 JSON 数组。"
+	if prompt != "" {
+		system += "\n补充要求：" + prompt
+	}
+
+	contextBlock := ""
+	if len(contextTexts) > 0 {
+		contextBlock = "\n【前文中文字幕参考】\n" + strings.Join(contextTexts, "\n")
+	}
+
+	lines := make([]string, 0, len(texts))
+	for index, text := range texts {
+		draft := ""
+		if index < len(draftTexts) {
+			draft = draftTexts[index]
+		}
+		lines = append(lines, strconv.Itoa(index+1)+". 原文："+text+"\n   当前译文："+draft)
+	}
+
+	user := contextBlock + "\n【待校对字幕】\n" + strings.Join(lines, "\n") + "\n\n请仅返回润色后的 JSON 数组："
+	return system, user
+}
+
+func buildJudgeMessages(texts []string, candidates []apptranslate.JudgeCandidate, prompt string) (string, string) {
+	system := "你是专业字幕评审。请在多个中文字幕候选中选出更适合作为最终字幕的版本。\n规则：只从给定候选中选择，不要自行改写；每条字幕返回一个对象数组；对象至少包含 winner 和 reason 字段；winner 必须是候选 key。"
+	if prompt != "" {
+		system += "\n补充要求：" + prompt
+	}
+
+	lines := make([]string, 0, len(texts))
+	for index, text := range texts {
+		builder := []string{strconv.Itoa(index+1) + ". 原文：" + text}
+		for _, candidate := range candidates {
+			value := ""
+			if index < len(candidate.Texts) {
+				value = candidate.Texts[index]
+			}
+			builder = append(builder, "   候选 "+candidate.Key+"（"+candidate.Label+"）："+value)
+		}
+		lines = append(lines, strings.Join(builder, "\n"))
+	}
+
+	user := "【待评估字幕】\n" + strings.Join(lines, "\n") + "\n\n请返回 JSON 数组，例如：[{\"winner\":\"A\",\"reason\":\"更自然\",\"scores\":{\"A\":9.1,\"B\":8.4}}]"
+	return system, user
+}
+
+func buildOperationMessages(request apptranslate.Request) (string, string, error) {
+	switch request.Operation {
+	case "", "translate":
+		system, user := buildTranslationMessages(request.Texts, request.ContextTexts)
+		return system, user, nil
+	case "review":
+		system, user := buildReviewMessages(request.Texts, request.DraftTexts, request.ContextTexts, stringValue(request.Options["prompt"]))
+		return system, user, nil
+	case "judge":
+		system, user := buildJudgeMessages(request.Texts, request.CandidateSets, stringValue(request.Options["prompt"]))
+		return system, user, nil
+	default:
+		return "", "", errors.New("不支持的工作流节点操作")
+	}
+}
+
+func parseOperationResponse(request apptranslate.Request, rawText string) ([]string, map[string]any, error) {
+	switch request.Operation {
+	case "", "translate", "review":
+		return ParseTranslationResponse(rawText, len(request.Texts)), nil, nil
+	case "judge":
+		return ParseJudgeResponse(rawText, request.CandidateSets)
+	default:
+		return nil, nil, errors.New("不支持的工作流节点操作")
+	}
 }
 
 func buildThinkingOverride(model string, disableThinking string) map[string]any {

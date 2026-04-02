@@ -2,6 +2,7 @@ import type { SubtitleEntry } from '../../lib/subtitle/types';
 import type { ProviderProfileStorageData } from './config-storage';
 import type { ProviderCenterStateData } from './provider-center-api';
 import type { ProviderTarget } from './target-selection';
+import type { WorkflowTemplate, WorkflowTemplateStateData } from './workflow-types';
 
 export interface TranslationConfig {
   batchSize: number;
@@ -26,6 +27,9 @@ export interface SubtitleTranslatorState {
   display: SubtitleEntry[];
   providerCenter: ProviderCenterStateData | null;
   providerProfiles: ProviderProfileStorageData;
+  workflowTemplates: WorkflowTemplateStateData;
+  activeTemplateId: string | null;
+  workflowDraft: WorkflowTemplate | null;
   primaryTarget: ProviderTarget | null;
   fallbackTarget: ProviderTarget | null;
   translationConfig: TranslationConfig;

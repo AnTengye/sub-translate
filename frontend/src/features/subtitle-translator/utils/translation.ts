@@ -66,6 +66,7 @@ export async function runTranslation(
 ): Promise<SubtitleEntry[]> {
   const results = entries.map((entry) => ({ ...entry }));
   const total = entries.length;
+  const runStartTime = Date.now();
 
   for (let start = 0; start < total; start += options.batchSize) {
     ensureNotAborted(options.signal);
@@ -80,7 +81,9 @@ export async function runTranslation(
       endIndex: end - 1,
       totalEntries: total,
     };
-    options.onLog(`📝 翻译 ${start + 1}–${end} / ${total}`);
+    
+    options.onLog(`📝 开始批次 ${batchMetadata.sequence}: ${start + 1}–${end} / ${total}`);
+    const startTime = Date.now();
 
     try {
       const translated = await options.dispatchTranslate(
@@ -90,14 +93,21 @@ export async function runTranslation(
         options.runId,
       );
 
+      let successCount = 0;
       for (let index = 0; index < batch.length; index += 1) {
         const text = translated[index];
+        const success = text && text !== '[翻译失败]';
+        if (success) successCount++;
+        
         results[start + index] = {
           ...results[start + index],
           translated: text ?? '[翻译失败]',
-          status: text && text !== '[翻译失败]' ? 'done' : 'error',
+          status: success ? 'done' : 'error',
         };
       }
+      
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      options.onLog(`✅ 批次 ${batchMetadata.sequence} 完成 (${successCount}/${batch.length} 成功, 耗时 ${duration}s)`);
     } catch (error) {
       if (isCancellationError(error)) {
         throw error;
@@ -119,7 +129,8 @@ export async function runTranslation(
     }
   }
 
-  options.onLog(`✅ 翻译完成，共 ${total} 条`);
+  const totalDuration = ((Date.now() - runStartTime) / 1000).toFixed(1);
+  options.onLog(`🏁 翻译任务完成，共 ${total} 条 (总耗时 ${totalDuration}s)`);
   return results;
 }
 
@@ -131,6 +142,7 @@ export async function runRetry(
   const results = currentEntries.map((entry) => ({ ...entry }));
   const sortedIndices = [...failedIndices].sort((left, right) => left - right);
   const batches: number[][] = [];
+  const retryStartTime = Date.now();
 
   for (let index = 0; index < sortedIndices.length; index += options.batchSize) {
     batches.push(sortedIndices.slice(index, index + options.batchSize));
@@ -155,17 +167,27 @@ export async function runRetry(
       totalEntries: results.length,
     };
 
+    options.onLog(`🔄 重试批次 ${batchMetadata.sequence}: 包含 ${batch.length} 条数据`);
+    const startTime = Date.now();
+
     try {
       const translated = await options.dispatchTranslate(texts, context, batchMetadata, options.runId);
+      
+      let successCount = 0;
       batch.forEach((entryIndex, index) => {
         const text = translated[index];
         const success = Boolean(text) && text !== '[翻译失败]';
+        if (success) successCount++;
+        
         results[entryIndex] = {
           ...results[entryIndex],
           translated: success ? text : results[entryIndex].translated,
           status: success ? 'done' : 'error',
         };
       });
+      
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      options.onLog(`✅ 重试批次 ${batchMetadata.sequence} 完成 (${successCount}/${batch.length} 成功, 耗时 ${duration}s)`);
     } catch (error) {
       if (isCancellationError(error)) {
         throw error;
@@ -184,6 +206,7 @@ export async function runRetry(
   }
 
   const successCount = sortedIndices.filter((index) => results[index].status === 'done').length;
-  options.onLog(`✅ 重试完成：${successCount}/${sortedIndices.length} 成功`);
+  const totalDuration = ((Date.now() - retryStartTime) / 1000).toFixed(1);
+  options.onLog(`🏁 重试任务完成：${successCount}/${sortedIndices.length} 成功 (总耗时 ${totalDuration}s)`);
   return results;
 }

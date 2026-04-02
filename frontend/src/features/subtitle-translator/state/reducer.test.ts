@@ -1,63 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import type { ProviderProfileStorageData } from '../config-storage';
 import type { ProviderCenterStateData } from '../provider-center-api';
+import type { WorkflowTemplateStateData } from '../workflow-types';
 import { createInitialState, subtitleTranslatorReducer } from './reducer';
 
 describe('subtitleTranslatorReducer', () => {
-  const persistedProfiles: ProviderProfileStorageData = {
-    version: 1,
-    defaultProvider: 'claude-compatible',
-    providers: {
-      'openai-compatible': {
-        activeProfileId: 'openai-default',
-        profiles: [
-          {
-            id: 'openai-default',
-            name: 'OpenAI Local',
-            config: {
-              apiEndpoint: 'http://localhost:11434/v1',
-              apiKey: 'openai-key',
-              model: 'qwen-local',
-              disableThinking: '',
-            },
-          },
-        ],
-      },
-      'claude-compatible': {
-        activeProfileId: 'claude-default',
-        profiles: [
-          {
-            id: 'claude-default',
-            name: 'Claude Local',
-            config: {
-              apiEndpoint: 'https://claude.example.com/v1',
-              apiKey: 'claude-key',
-              model: 'claude-sonnet',
-            },
-          },
-        ],
-      },
-      baidu: {
-        activeProfileId: 'baidu-default',
-        profiles: [
-          {
-            id: 'baidu-default',
-            name: 'Baidu Local',
-            config: {
-              apiEndpoint: 'https://baidu.example.com',
-              appId: 'app-id',
-              apiKey: 'baidu-key',
-              secretKey: '',
-              modelType: 'nmt',
-              reference: 'keep names stable',
-              punctuationPreprocessing: 'true',
-            },
-          },
-        ],
-      },
-    },
-  };
-
   const providerCenter: ProviderCenterStateData = {
     version: 1,
     defaultProvider: 'openai-compatible',
@@ -184,6 +130,44 @@ describe('subtitleTranslatorReducer', () => {
     },
   };
 
+  const workflowTemplates: WorkflowTemplateStateData = {
+    version: 1,
+    templates: [
+      {
+        id: 'quality-first',
+        name: '质量优先',
+        description: 'seed',
+        scenario: 'translation',
+        stages: [
+          {
+            id: 'translate',
+            name: '主翻译与补偿',
+            type: 'translate',
+            execution: 'serial',
+            strategy: 'fallback',
+            nodes: [
+              {
+                id: 'primary',
+                label: '主翻译',
+                type: 'translate',
+                enabled: true,
+                prompt: '',
+                target: null,
+              },
+            ],
+          },
+        ],
+      },
+      {
+        id: 'compare',
+        name: '双路比对',
+        description: 'parallel compare',
+        scenario: 'comparison',
+        stages: [],
+      },
+    ],
+  };
+
   it('moves to config when a valid file is loaded', () => {
     const state = createInitialState();
     const next = subtitleTranslatorReducer(state, {
@@ -205,42 +189,55 @@ describe('subtitleTranslatorReducer', () => {
     expect(next.display).toHaveLength(1);
   });
 
-  it('keeps legacy persisted profiles but does not derive runtime target from them alone', () => {
-    const state = createInitialState(persistedProfiles);
-
-    expect(state.providerProfiles).toEqual(persistedProfiles);
-    expect(state.primaryTarget).toBeNull();
-    expect(state.fallbackTarget).toBeNull();
-  });
-
-  it('hydrates eligible primary and fallback targets from provider center data', () => {
-    const state = createInitialState(persistedProfiles);
+  it('hydrates provider center state without selecting a workflow target automatically', () => {
+    const state = createInitialState();
 
     const next = subtitleTranslatorReducer(state, {
       type: 'hydrateProviderCenter',
       providerCenter,
     });
 
-    expect(next.primaryTarget).toEqual({
-      family: 'openai-compatible',
-      profileId: 'openai-default',
-      modelId: 'gpt-4o-mini',
-    });
-    expect(next.fallbackTarget).toEqual({
-      family: 'claude-compatible',
-      profileId: 'claude-default',
-      modelId: 'claude-sonnet',
-    });
+    expect(next.providerCenter).toEqual(providerCenter);
+    expect(next.workflowDraft).toBeNull();
   });
 
-  it('prevents fallback from duplicating the primary target', () => {
-    const hydrated = subtitleTranslatorReducer(createInitialState(persistedProfiles), {
-      type: 'hydrateProviderCenter',
-      providerCenter,
+  it('hydrates templates and selects the first one as active draft', () => {
+    const state = createInitialState();
+
+    const next = subtitleTranslatorReducer(state, {
+      type: 'hydrateWorkflowTemplates',
+      workflowTemplates,
+    });
+
+    expect(next.activeTemplateId).toBe('quality-first');
+    expect(next.workflowDraft?.id).toBe('quality-first');
+  });
+
+  it('selects a different workflow template by id', () => {
+    const hydrated = subtitleTranslatorReducer(createInitialState(), {
+      type: 'hydrateWorkflowTemplates',
+      workflowTemplates,
     });
 
     const next = subtitleTranslatorReducer(hydrated, {
-      type: 'setFallbackTarget',
+      type: 'selectWorkflowTemplate',
+      templateId: 'compare',
+    });
+
+    expect(next.activeTemplateId).toBe('compare');
+    expect(next.workflowDraft?.name).toBe('双路比对');
+  });
+
+  it('updates a workflow node target inside the active draft', () => {
+    const hydrated = subtitleTranslatorReducer(createInitialState(), {
+      type: 'hydrateWorkflowTemplates',
+      workflowTemplates,
+    });
+
+    const next = subtitleTranslatorReducer(hydrated, {
+      type: 'setWorkflowNodeTarget',
+      stageId: 'translate',
+      nodeId: 'primary',
       target: {
         family: 'openai-compatible',
         profileId: 'openai-default',
@@ -248,10 +245,10 @@ describe('subtitleTranslatorReducer', () => {
       },
     });
 
-    expect(next.fallbackTarget).toEqual({
-      family: 'claude-compatible',
-      profileId: 'claude-default',
-      modelId: 'claude-sonnet',
+    expect(next.workflowDraft?.stages[0].nodes[0].target).toEqual({
+      family: 'openai-compatible',
+      profileId: 'openai-default',
+      modelId: 'gpt-4o-mini',
     });
   });
 });

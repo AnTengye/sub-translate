@@ -19,6 +19,8 @@ import (
 	providercenterinfra "srt-translate/internal/infra/providercenter"
 	"srt-translate/internal/infra/providers"
 	"srt-translate/internal/infra/static"
+	workflowtemplatesinfra "srt-translate/internal/infra/workflowtemplates"
+	appworkflowtemplates "srt-translate/internal/app/workflowtemplates"
 	"srt-translate/internal/platform/config"
 	"srt-translate/internal/platform/id"
 	httpserver "srt-translate/internal/transport/http"
@@ -66,6 +68,9 @@ func main() {
 	if err := os.MkdirAll(filepath.Dir(cfg.DatabasePath), 0o755); err != nil {
 		log.Fatal(err)
 	}
+	if err := os.MkdirAll(filepath.Dir(cfg.WorkflowTemplatesPath), 0o755); err != nil {
+		log.Fatal(err)
+	}
 	if err := os.MkdirAll(cfg.LogDir, 0o755); err != nil {
 		log.Fatal(err)
 	}
@@ -96,6 +101,9 @@ func main() {
 		HealthChecker:   providercenterinfra.HealthChecker{},
 		ModelDiscoverer: providercenterinfra.ModelDiscoverer{Client: httpClient},
 	})
+	workflowTemplateService := appworkflowtemplates.NewService(appworkflowtemplates.Dependencies{
+		Repository: workflowtemplatesinfra.NewFileRepository(cfg.WorkflowTemplatesPath),
+	})
 
 	translateService := apptranslate.NewService(apptranslate.Dependencies{
 		ProviderCenterReader: providerCenterService,
@@ -123,6 +131,7 @@ func main() {
 		StaticFileHandler:      static.SPAHandler{DistDir: cfg.DistDir},
 		ProviderDefaultsReader: providerdefaults.NewService(cfg.Env),
 		ProviderCenterService:  providerCenterService,
+		WorkflowTemplateService: workflowTemplateService,
 		TranslateService:       translateService,
 		TranslationRunLogger: translationRunLoggerAdapter{
 			logger: logging.NewTranslationRunLogger(logging.TranslationRunLoggerDependencies{
