@@ -799,29 +799,16 @@ select:focus-visible {
   animation: pulse 1s ease-in-out infinite;
 }
 
-.log-toggle {
-  border: none;
-  background: transparent;
-  padding: 0;
-  font-size: 11px;
-  color: var(--text-1);
-  font-family: var(--font-mono);
-}
-
 .log-body {
   padding: 12px 14px;
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  max-height: 132px;
-  overflow: auto;
+  max-height: min(42vh, 360px);
+  overflow-y: auto;
   color: var(--text-2);
   border-bottom-left-radius: calc(var(--radius-lg) - 1px);
   border-bottom-right-radius: calc(var(--radius-lg) - 1px);
-}
-
-.log-body.expanded {
-  max-height: min(42vh, 360px);
 }
 
 .log-line {

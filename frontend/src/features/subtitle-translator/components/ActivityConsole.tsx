@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useRef, useEffect, useCallback } from 'react';
 import type { TranslationLogEntry } from '../types';
 
 interface ActivityConsoleProps {
@@ -22,19 +22,22 @@ function getMessageTone(message: string) {
 }
 
 export function ActivityConsole({ logs }: ActivityConsoleProps) {
-  const [expanded, setExpanded] = useState(false);
   const bodyRef = useRef<HTMLDivElement>(null);
-  const visibleLogs = logs;
+  const userScrolledRef = useRef(false);
+
+  const handleScroll = useCallback(() => {
+    const el = bodyRef.current;
+    if (!el) return;
+    // If user scrolled away from bottom, pause auto-scroll
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    userScrolledRef.current = !atBottom;
+  }, []);
 
   useEffect(() => {
-    if (expanded && bodyRef.current)  {
-      const { scrollTop, scrollHeight, clientHeight } = bodyRef.current;
-      // Auto-scroll if we are close to the bottom (within 40px threshold)
-      if (scrollHeight - scrollTop - clientHeight < 40) {
-        bodyRef.current.scrollTop = scrollHeight;
-      }
+    if (bodyRef.current && !userScrolledRef.current) {
+      bodyRef.current.scrollTop = bodyRef.current.scrollHeight;
     }
-  }, [logs, expanded]);
+  }, [logs]);
 
   return (
     <div className="log-panel">
@@ -43,28 +46,20 @@ export function ActivityConsole({ logs }: ActivityConsoleProps) {
           <div className="rec-dot" />
           实时运行日志 {logs.length > 0 ? `(${logs.length})` : ''}
         </div>
-        <button
-          className="log-toggle"
-          type="button"
-          aria-expanded={expanded}
-          aria-controls="activity-console-body"
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? '▴ 收起日志' : '▾ 展开日志'}
-        </button>
       </div>
       <div
         id="activity-console-body"
         ref={bodyRef}
-        className={`log-body${expanded ? ' expanded' : ''}`}
+        className="log-body"
+        onScroll={handleScroll}
       >
-        {visibleLogs.length === 0 ? (
+        {logs.length === 0 ? (
           <div className="log-line">
             <span className="log-time">--:--:--</span>
             <span className="log-msg info">已加载工作台，等待翻译任务启动</span>
           </div>
         ) : (
-          visibleLogs.map((log, index) => (
+          logs.map((log, index) => (
             <div key={`${log.t}-${index}`} className="log-line">
               <span className="log-time">{log.t}</span>
               <span className={`log-msg ${getMessageTone(log.msg)}`}>{log.msg}</span>

@@ -208,6 +208,15 @@ export default function SubtitleTranslatorPage() {
               msg: message,
             },
           }),
+        onProgress: (texts) => {
+          const doneCount = texts.filter((t) => t && t !== '[翻译失败]').length;
+          const progress = Math.round((doneCount / state.entries.length) * 100);
+          dispatch({
+            type: 'translationProgress',
+            display: buildDisplay(state.entries, texts),
+            progress,
+          });
+        },
         executeNode: async (request) => {
           const targetConfig = buildProviderRequestConfig(
             state.providerCenter,
@@ -282,18 +291,24 @@ export default function SubtitleTranslatorPage() {
         controller.signal,
       );
     } catch (error) {
+      const errorMsg = error instanceof Error ? error.message : '工作流执行失败';
+      dispatch({
+        type: 'appendLog',
+        log: {
+          t: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+          msg: `❌ ${errorMsg}`,
+        },
+      });
       dispatch({
         type: 'translationFailed',
-        error: error instanceof Error ? error.message : '工作流执行失败',
+        error: errorMsg,
       });
       if (runId) {
         await finalizeTranslationRun(
           runId,
           {
             status: 'failed',
-            error: {
-              message: error instanceof Error ? error.message : '工作流执行失败',
-            },
+            error: { message: errorMsg },
           },
           controller.signal,
         ).catch(() => undefined);

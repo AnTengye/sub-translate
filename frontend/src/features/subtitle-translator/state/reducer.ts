@@ -236,12 +236,14 @@ export function subtitleTranslatorReducer(
         display: action.display,
         progress: 100,
       };
-    case 'translationFailed':
+    case 'translationFailed': {
+      const hasPartialResults = state.display.some((entry) => entry.status === 'done');
       return {
         ...state,
-        step: 'config',
+        step: hasPartialResults ? 'done' : 'config',
         error: action.error,
       };
+    }
     case 'setLogs':
       return {
         ...state,
