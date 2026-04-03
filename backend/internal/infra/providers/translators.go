@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"strconv"
 	"strings"
@@ -431,26 +432,91 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 		return nil, nil, err
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
-	if err != nil {
-		return nil, nil, err
-	}
-	for key, value := range headers {
-		req.Header.Set(key, value)
+	var lastResp *http.Response
+	var lastRawBody []byte
+	var lastErr error
+
+	for attempt := 0; attempt < 3; attempt++ {
+		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
+		if err != nil {
+			return nil, nil, err
+		}
+		for key, value := range headers {
+			req.Header.Set(key, value)
+		}
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			if attempt < 2 && isRetryableError(err) {
+				select {
+				case <-ctx.Done():
+					return nil, nil, ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * time.Second):
+					continue
+				}
+			}
+			return nil, nil, err
+		}
+
+		rawBody, err := io.ReadAll(resp.Body)
+		resp.Body.Close()
+		if err != nil {
+			lastErr = err
+			if attempt < 2 && isRetryableError(err) {
+				select {
+				case <-ctx.Done():
+					return nil, nil, ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * time.Second):
+					continue
+				}
+			}
+			return nil, nil, err
+		}
+
+		if resp.StatusCode >= 500 {
+			lastErr = errors.New("HTTP " + strconv.Itoa(resp.StatusCode))
+			lastResp = resp
+			lastRawBody = rawBody
+			if attempt < 2 {
+				select {
+				case <-ctx.Done():
+					return nil, nil, ctx.Err()
+				case <-time.After(time.Duration(attempt+1) * time.Second):
+					continue
+				}
+			}
+			return resp, rawBody, nil
+		}
+
+		return resp, rawBody, nil
 	}
 
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, nil, err
+	if lastResp != nil {
+		return lastResp, lastRawBody, nil
 	}
-	defer resp.Body.Close()
+	return nil, nil, lastErr
+}
 
-	rawBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, nil, err
+func isRetryableError(err error) bool {
+	if err == nil {
+		return false
 	}
-
-	return resp, rawBody, nil
+	if errors.Is(err, context.DeadlineExceeded) {
+		return true
+	}
+	if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
+		return true
+	}
+	var netErr net.Error
+	if errors.As(err, &netErr) && netErr.Timeout() {
+		return true
+	}
+	errStr := strings.ToLower(err.Error())
+	if strings.Contains(errStr, "connection reset") || strings.Contains(errStr, "broken pipe") {
+		return true
+	}
+	return false
 }
 
 func normalizeOpenAIEndpoint(endpoint string, providerLabel string) string {

@@ -85,6 +85,7 @@ export async function runTranslation(
     options.onLog(`📝 开始批次 ${batchMetadata.sequence}: ${start + 1}–${end} / ${total}`);
     const startTime = Date.now();
 
+      options.onLog(`当前正在处理第 ${batchMetadata.sequence} 批`);
     try {
       const translated = await options.dispatchTranslate(
         batch.map((entry) => entry.text),
@@ -171,6 +172,7 @@ export async function runRetry(
     const startTime = Date.now();
 
     try {
+      options.onLog(`当前正在重试第 ${batchMetadata.sequence} 批`);
       const translated = await options.dispatchTranslate(texts, context, batchMetadata, options.runId);
       
       let successCount = 0;

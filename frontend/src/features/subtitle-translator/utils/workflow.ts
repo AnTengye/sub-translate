@@ -1,3 +1,11 @@
+function chunkArray<T>(arr: T[], size: number): T[][] {
+  const result: T[][] = [];
+  for (let i = 0; i < arr.length; i += size) {
+    result.push(arr.slice(i, i + size));
+  }
+  return result;
+}
+
 import type { WorkflowTemplate, WorkflowTemplateNode } from '../workflow-types';
 
 const failurePlaceholder = '[翻译失败]';
@@ -101,22 +109,33 @@ export async function executeWorkflowTemplate(
         }
 
         const startTime = Date.now();
-        const response = await options.executeNode({
-          operation: 'translate',
-          node,
-          texts: pendingIndices.map((index) => entries[index].text),
-          contextTexts: [],
-        });
-        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        const batches = chunkArray(pendingIndices, options.batchSize);
+        options.onLog(`📦 节点 [${node.label}] 串行翻译，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+        
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          const batchIndices = batches[batchIdx];
+          options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batchIndices[0] + 1}–${batchIndices[batchIndices.length - 1] + 1}`);
+          
+          const response = await options.executeNode({
+            operation: 'translate',
+            node,
+            texts: batchIndices.map((index) => entries[index].text),
+            contextTexts: [],
+          });
 
-        const translated = normalizeTranslations(response.translations, pendingIndices.length);
-        let successCount = 0;
-        translated.forEach((text, index) => {
-          nextTexts[pendingIndices[index]] = text;
-          if (!isFailed(text)) successCount++;
-        });
-        pendingIndices = pendingIndices.filter((index) => isFailed(nextTexts[index]));
-        options.onLog(`✅ 节点 [${node.label}] 串行翻译完成 (${successCount}/${translated.length} 成功, 耗时 ${duration}s)`);
+          const translated = normalizeTranslations(response.translations, batchIndices.length);
+          translated.forEach((text, index) => {
+            nextTexts[batchIndices[index]] = text;
+          });
+          
+          // Remove succeeded entries from pending
+          pendingIndices = pendingIndices.filter((index) => isFailed(nextTexts[index]));
+          if (pendingIndices.length === 0) break;
+        }
+        
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        const successCount = nextTexts.filter(t => !isFailed(t)).length;
+        options.onLog(`✅ 节点 [${node.label}] 串行翻译完成 (${successCount}/${nextTexts.length} 成功, 耗时 ${duration}s)`);
       }
 
       currentTexts = nextTexts;
@@ -136,15 +155,25 @@ export async function executeWorkflowTemplate(
       const trackResponses = await Promise.all(
         nodes.map(async (node) => {
           const startTime = Date.now();
-          const response = await options.executeNode({
-            operation: 'translate',
-            node,
-            texts: entries.map((entry) => entry.text),
-            contextTexts: [],
-          });
-          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+          const batches = chunkArray(entries, options.batchSize);
+          options.onLog(`📦 节点 [${node.label}] 并行翻译，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
           
-          const translated = normalizeTranslations(response.translations, entries.length);
+          const allTranslations: string[] = [];
+          for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+            const batch = batches[batchIdx];
+            options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+            
+            const response = await options.executeNode({
+              operation: 'translate',
+              node,
+              texts: batch.map((entry) => entry.text),
+              contextTexts: [],
+            });
+            allTranslations.push(...response.translations);
+          }
+          
+          const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+          const translated = normalizeTranslations(allTranslations, entries.length);
           const successCount = translated.filter(t => !isFailed(t)).length;
           options.onLog(`✅ 节点 [${node.label}] 并行翻译完成 (${successCount}/${entries.length} 成功, 耗时 ${duration}s)`);
 
@@ -168,17 +197,33 @@ export async function executeWorkflowTemplate(
       const node = nodes[0];
       options.onLog(`⚖️ 开始评估阶段: 节点 [${node.label}]`);
       const startTime = Date.now();
-      const response = await options.executeNode({
-        operation: 'judge',
-        node,
-        texts: entries.map((entry) => entry.text),
-        contextTexts: [],
-        candidateSets: candidateTracks,
-      });
+      
+      const batches = chunkArray(entries, options.batchSize);
+      options.onLog(`📦 评估，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+      
+      const allDecisions: WorkflowJudgeDecision[] = [];
+      const allTranslations: string[] = [];
+      
+      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        const batch = batches[batchIdx];
+        options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+        
+        const response = await options.executeNode({
+          operation: 'judge',
+          node,
+          texts: batch.map((entry) => entry.text),
+          contextTexts: [],
+          candidateSets: candidateTracks,
+        });
+        
+        const decisions = parseJudgeDecisions(response.metadata);
+        allDecisions.push(...decisions);
+        allTranslations.push(...response.translations);
+      }
+      
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-
-      judgeDecisions = parseJudgeDecisions(response.metadata);
-      currentTexts = normalizeTranslations(response.translations, entries.length);
+      judgeDecisions = allDecisions;
+      currentTexts = normalizeTranslations(allTranslations, entries.length);
       selectedTrackByEntry = judgeDecisions.map((decision) => decision.winner);
       options.onLog(`✅ 评估完成 (耗时 ${duration}s)`);
       continue;
@@ -188,15 +233,45 @@ export async function executeWorkflowTemplate(
       for (const node of nodes) {
         options.onLog(`🔍 开始审校阶段: 节点 [${node.label}]`);
         const startTime = Date.now();
-        const response = await options.executeNode({
-          operation: 'review',
-          node,
-          texts: entries.map((entry) => entry.text),
-          contextTexts: [],
-          draftTexts: currentTexts,
-        });
+        
+        const batches = chunkArray(entries, options.batchSize);
+        options.onLog(`📦 审校，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+        
+        const allTranslations: string[] = [];
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          const batch = batches[batchIdx];
+          options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+          
+          const batchDrafts = batch.map((entry) => {
+            const arrayIdx = entries.findIndex(e => e.idx === entry.idx);
+            return arrayIdx >= 0 ? (currentTexts[arrayIdx] ?? '[翻译失败]') : '[翻译失败]';
+          });
+          const response = await options.executeNode({
+            operation: 'review',
+            node,
+            texts: batch.map((entry) => entry.text),
+            contextTexts: [],
+            draftTexts: batchDrafts,
+          });
+          allTranslations.push(...response.translations);
+        }
+        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          const batch = batches[batchIdx];
+          options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+          
+          const batchDrafts = batch.map((entry) => currentTexts[entry.idx] ?? '[翻译失败]');
+          const response = await options.executeNode({
+            operation: 'review',
+            node,
+            texts: batch.map((entry) => entry.text),
+            contextTexts: [],
+            draftTexts: batchDrafts,
+          });
+          allTranslations.push(...response.translations);
+        }
+        
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-        currentTexts = normalizeTranslations(response.translations, entries.length);
+        currentTexts = normalizeTranslations(allTranslations, entries.length);
         options.onLog(`✅ 审校完成 (耗时 ${duration}s)`);
       }
 
