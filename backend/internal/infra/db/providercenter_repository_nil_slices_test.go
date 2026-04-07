@@ -59,3 +59,41 @@ func TestProviderCenterRepositoryReadReturnsEmptySlicesInsteadOfNil(t *testing.T
 		t.Fatal("expected AvailableModels to be empty slice, got nil")
 	}
 }
+
+func TestProviderCenterRepositoryReadReturnsEmptyFamilyProfilesInsteadOfNil(t *testing.T) {
+	t.Parallel()
+
+	repository, cleanup := newRepository(t)
+	defer cleanup()
+
+	input := providercenter.State{
+		Version:         1,
+		DefaultProvider: "openai-compatible",
+		Families: map[string]providercenter.Family{
+			"openai-compatible": {
+				ID:              "openai-compatible",
+				Label:           "OpenAI Compatible",
+				Description:     "desc",
+				ActiveProfileID: "",
+				Profiles:        []providercenter.Profile{},
+			},
+		},
+	}
+
+	if err := repository.Save(context.Background(), input); err != nil {
+		t.Fatalf("Save() error = %v", err)
+	}
+
+	actual, err := repository.Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+
+	family := actual.Families["openai-compatible"]
+	if family.Profiles == nil {
+		t.Fatal("expected Profiles to be empty slice, got nil")
+	}
+	if len(family.Profiles) != 0 {
+		t.Fatalf("expected Profiles to be empty, got %#v", family.Profiles)
+	}
+}

@@ -56,7 +56,7 @@ function normalizeProviderCenterState(input: ProviderCenterStateData): ProviderC
         familyId,
         {
           ...family,
-          profiles: family.profiles.map((profile) => ({
+          profiles: (Array.isArray(family.profiles) ? family.profiles : []).map((profile) => ({
             ...profile,
             models: Array.isArray(profile.models) ? profile.models : [],
             availableModels: Array.isArray(profile.availableModels) ? profile.availableModels : [],

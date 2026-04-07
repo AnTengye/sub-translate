@@ -166,7 +166,7 @@ func (r *ProviderCenterRepository) Read(ctx context.Context) (domainprovider.Sta
 			Label:           record.Label,
 			Description:     record.Description,
 			ActiveProfileID: record.ActiveProfileID,
-			Profiles:        profilesByFamilyID[record.ID],
+			Profiles:        emptyProfiles(profilesByFamilyID[record.ID]),
 		}
 	}
 
@@ -286,4 +286,11 @@ func emptyModels(models []domainprovider.Model) []domainprovider.Model {
 		return []domainprovider.Model{}
 	}
 	return models
+}
+
+func emptyProfiles(profiles []domainprovider.Profile) []domainprovider.Profile {
+	if profiles == nil {
+		return []domainprovider.Profile{}
+	}
+	return profiles
 }
