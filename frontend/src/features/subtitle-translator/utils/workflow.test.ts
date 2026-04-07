@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { executeWorkflowTemplate } from './workflow';
+import { executeWorkflowTemplate, isWorkflowPausedError } from './workflow';
 import type { WorkflowTemplate } from '../workflow-types';
 
 const entries = [
@@ -252,5 +252,140 @@ describe('executeWorkflowTemplate', () => {
     expect(result.selectedTrackByEntry).toEqual(['candidate-a', 'candidate-b']);
     expect(result.judgeDecisions[1].reason).toBe('更准确');
     expect(result.finalTexts).toEqual(['你好', '世间']);
+  });
+
+  it('can resume from a paused batch boundary without rerunning finished batches', async () => {
+    const calls: string[] = [];
+    const template: WorkflowTemplate = {
+      id: 'quality-first',
+      name: '质量优先',
+      description: 'seed',
+      scenario: 'translation',
+      stages: [
+        {
+          id: 'translate',
+          name: '主翻译与补偿',
+          type: 'translate',
+          execution: 'serial',
+          strategy: 'fallback',
+          nodes: [
+            {
+              id: 'primary',
+              label: '主翻译',
+              type: 'translate',
+              enabled: true,
+              prompt: '',
+              target: { family: 'openai-compatible', profileId: 'p1', modelId: 'm1' },
+            },
+          ],
+        },
+      ],
+    };
+    const batchEntries = [
+      ...entries,
+      {
+        idx: 3,
+        timecode: '00:00:05,000 --> 00:00:06,000',
+        text: 'またね',
+      },
+    ];
+
+    let pausedSnapshot: Awaited<ReturnType<typeof executeWorkflowTemplate>>['snapshot'] | null = null;
+
+    try {
+      await executeWorkflowTemplate(batchEntries, template, {
+        batchSize: 2,
+        contextLines: 0,
+        onLog: vi.fn(),
+        shouldPause: (snapshot) => snapshot.completedBatches >= 1,
+        executeNode: async (request) => {
+          calls.push(request.texts.join('|'));
+          return {
+            translations: request.texts.map((text) => `译:${text}`),
+          };
+        },
+      });
+    } catch (error) {
+      expect(isWorkflowPausedError(error)).toBe(true);
+      pausedSnapshot = isWorkflowPausedError(error) ? error.snapshot : null;
+    }
+
+    expect(pausedSnapshot?.completedBatches).toBe(1);
+    expect(calls).toEqual(['こんにちは|世界']);
+
+    const resumed = await executeWorkflowTemplate(batchEntries, template, {
+      batchSize: 2,
+      contextLines: 0,
+      onLog: vi.fn(),
+      initialSnapshot: pausedSnapshot ?? undefined,
+      executeNode: async (request) => {
+        calls.push(request.texts.join('|'));
+        return {
+          translations: request.texts.map((text) => `译:${text}`),
+        };
+      },
+    });
+
+    expect(calls).toEqual(['こんにちは|世界', 'またね']);
+    expect(resumed.finalTexts).toEqual(['译:こんにちは', '译:世界', '译:またね']);
+  });
+
+  it('interrupts the current node after repeated rate-limit hits', async () => {
+    const logs: string[] = [];
+    const template: WorkflowTemplate = {
+      id: 'quality-first',
+      name: '质量优先',
+      description: 'seed',
+      scenario: 'translation',
+      stages: [
+        {
+          id: 'translate',
+          name: '主翻译与补偿',
+          type: 'translate',
+          execution: 'serial',
+          strategy: 'fallback',
+          nodes: [
+            {
+              id: 'primary',
+              label: '主翻译',
+              type: 'translate',
+              enabled: true,
+              prompt: '',
+              target: { family: 'openai-compatible', profileId: 'p1', modelId: 'm1' },
+            },
+          ],
+        },
+      ],
+    };
+    const batchEntries = [
+      ...entries,
+      {
+        idx: 3,
+        timecode: '00:00:05,000 --> 00:00:06,000',
+        text: 'またね',
+      },
+    ];
+
+    let interruptedSnapshot: Awaited<ReturnType<typeof executeWorkflowTemplate>>['snapshot'] | null = null;
+
+    try {
+      await executeWorkflowTemplate(batchEntries, template, {
+        batchSize: 1,
+        contextLines: 0,
+        onLog: (message) => logs.push(message),
+        rateLimitInterruptThreshold: 2,
+        executeNode: async () => {
+          throw new Error('429 rate limit exceeded');
+        },
+      });
+    } catch (error) {
+      expect(isWorkflowPausedError(error)).toBe(true);
+      interruptedSnapshot = isWorkflowPausedError(error) ? error.snapshot : null;
+    }
+
+    expect(interruptedSnapshot?.pauseReason).toBe('interrupted');
+    expect(interruptedSnapshot?.nodeRuntime['translate::primary']?.consecutiveRateLimitHits).toBe(2);
+    expect(logs.some((message) => message.includes('限流命中'))).toBe(true);
+    expect(logs.some((message) => message.includes('已中断'))).toBe(true);
   });
 });

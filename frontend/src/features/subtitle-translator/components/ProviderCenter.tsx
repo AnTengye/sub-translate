@@ -177,15 +177,15 @@ function providerIcon(label: ProviderTypeOption) {
 
 function buildProfileTemplate(type: ProviderTypeOption, profileId: string, name: string): ProviderCenterProfile {
   if (type === 'Anthropic') {
-    return { id: profileId, family: 'claude-compatible', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', apiKey: '' }, settings: { model: '', providerLabel: 'Anthropic' }, capabilities: { supportsModelDiscovery: false, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: false }, models: [], modelDiscovery: { sourceMode: 'manual', supportsModelDiscovery: false, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
+    return { id: profileId, family: 'claude-compatible', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', apiKey: '' }, settings: { model: '', providerLabel: 'Anthropic' }, capabilities: { supportsModelDiscovery: false, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: false }, rpmLimit: 0, rpdLimit: 0, models: [], modelDiscovery: { sourceMode: 'manual', supportsModelDiscovery: false, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
   }
   if (type === 'Baidu') {
-    return { id: profileId, family: 'baidu', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', appId: '', apiKey: '', secretKey: '' }, settings: { modelType: '', reference: '', punctuationPreprocessing: '', providerLabel: 'Baidu' }, capabilities: { supportsModelDiscovery: false, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: false }, models: [], modelDiscovery: { sourceMode: 'manual', supportsModelDiscovery: false, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
+    return { id: profileId, family: 'baidu', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', appId: '', apiKey: '', secretKey: '' }, settings: { modelType: '', reference: '', punctuationPreprocessing: '', providerLabel: 'Baidu' }, capabilities: { supportsModelDiscovery: false, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: false }, rpmLimit: 0, rpdLimit: 0, models: [], modelDiscovery: { sourceMode: 'manual', supportsModelDiscovery: false, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
   }
   if (type === 'Google') {
-    return { id: profileId, family: 'google', name, enabled: true, isDefault: false, connection: { apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta', apiKey: '' }, settings: { model: '', disableThinking: '', providerLabel: 'Google' }, capabilities: { supportsModelDiscovery: true, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: true }, models: [], modelDiscovery: { sourceMode: 'auto', supportsModelDiscovery: true, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
+    return { id: profileId, family: 'google', name, enabled: true, isDefault: false, connection: { apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta', apiKey: '' }, settings: { model: '', disableThinking: '', providerLabel: 'Google' }, capabilities: { supportsModelDiscovery: true, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: true }, rpmLimit: 0, rpdLimit: 0, models: [], modelDiscovery: { sourceMode: 'auto', supportsModelDiscovery: true, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
   }
-  return { id: profileId, family: 'openai-compatible', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', apiKey: '' }, settings: { model: '', disableThinking: '', providerLabel: type }, capabilities: { supportsModelDiscovery: true, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: true }, models: [], modelDiscovery: { sourceMode: 'auto', supportsModelDiscovery: true, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
+  return { id: profileId, family: 'openai-compatible', name, enabled: true, isDefault: false, connection: { apiEndpoint: '', apiKey: '' }, settings: { model: '', disableThinking: '', providerLabel: type }, capabilities: { supportsModelDiscovery: true, supportsConnectionCheck: true, supportsManualModelManagement: true, supportsThinkingToggle: true }, rpmLimit: 0, rpdLimit: 0, models: [], modelDiscovery: { sourceMode: 'auto', supportsModelDiscovery: true, lastCheckedAt: null, lastStatus: 'idle', lastError: null }, health: { status: 'idle', summary: '未检查', lastCheckedAt: null, error: null } };
 }
 
 function nextProfileId(type: ProviderTypeOption) {
@@ -205,6 +205,10 @@ function previewApiUrl(profile: ProviderCenterProfile) {
     return `预览：${endpoint.replace(/\/$/, '')}/models/{model}:generateContent`;
   }
   return `预览：${endpoint}`;
+}
+
+function parseLimitInput(value: string, minimum = 0) {
+  return Math.max(minimum, Math.floor(Number(value) || 0));
 }
 
 export function ProviderCenter(props: ProviderCenterProps) {
@@ -395,6 +399,86 @@ export function ProviderCenter(props: ProviderCenterProps) {
                 <section className="provider-center-section">
                   <div className="provider-center-section-heading">
                     <div>
+                      <h4>全局限流</h4>
+                      <p className="provider-center-caption">留空或 0 表示默认不限，Profile 与模型可继续覆盖。</p>
+                    </div>
+                  </div>
+                  <div className="provider-center-grid">
+                    <label className="field">
+                      <span>默认 RPM</span>
+                      <input
+                        aria-label="全局 RPM 默认限制"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draft.limits.globalRpmLimit || ''}
+                        onChange={(event) =>
+                          setDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  limits: {
+                                    ...current.limits,
+                                    globalRpmLimit: parseLimitInput(event.target.value),
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>默认 RPD</span>
+                      <input
+                        aria-label="全局 RPD 默认限制"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={draft.limits.globalRpdLimit || ''}
+                        onChange={(event) =>
+                          setDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  limits: {
+                                    ...current.limits,
+                                    globalRpdLimit: parseLimitInput(event.target.value),
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>中断阈值</span>
+                      <input
+                        aria-label="限流中断阈值"
+                        type="number"
+                        min="1"
+                        step="1"
+                        value={draft.limits.rateLimitInterruptThreshold || 3}
+                        onChange={(event) =>
+                          setDraft((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  limits: {
+                                    ...current.limits,
+                                    rateLimitInterruptThreshold: parseLimitInput(event.target.value, 1),
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    </label>
+                  </div>
+                </section>
+
+                <section className="provider-center-section">
+                  <div className="provider-center-section-heading">
+                    <div>
                       <h4>API 密钥</h4>
                     </div>
                     <div className="provider-center-inline-actions">
@@ -451,6 +535,49 @@ export function ProviderCenter(props: ProviderCenterProps) {
                     }
                   />
                   <p className="provider-center-field-note">{previewApiUrl(activeProfile)}</p>
+                </section>
+
+                <section className="provider-center-section">
+                  <div className="provider-center-section-heading">
+                    <div>
+                      <h4>Profile 限流</h4>
+                      <p className="provider-center-caption">留空或 0 则继承全局默认限制。</p>
+                    </div>
+                  </div>
+                  <div className="provider-center-grid">
+                    <label className="field">
+                      <span>RPM</span>
+                      <input
+                        aria-label="Profile RPM 限制"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={activeProfile.rpmLimit || ''}
+                        onChange={(event) =>
+                          updateProfile((profile) => ({
+                            ...profile,
+                            rpmLimit: parseLimitInput(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                    <label className="field">
+                      <span>RPD</span>
+                      <input
+                        aria-label="Profile RPD 限制"
+                        type="number"
+                        min="0"
+                        step="1"
+                        value={activeProfile.rpdLimit || ''}
+                        onChange={(event) =>
+                          updateProfile((profile) => ({
+                            ...profile,
+                            rpdLimit: parseLimitInput(event.target.value),
+                          }))
+                        }
+                      />
+                    </label>
+                  </div>
                 </section>
               </>
             ) : (
@@ -593,10 +720,28 @@ export function ProviderCenter(props: ProviderCenterProps) {
                           placeholder="0"
                           value={model.rpmLimit || ''}
                           onChange={(event) => {
-                            const value = Math.max(0, Math.floor(Number(event.target.value) || 0));
+                            const value = parseLimitInput(event.target.value);
                             updateProfile((profile) => ({
                               ...profile,
                               models: profile.models.map((m) => (m.id === model.id ? { ...m, rpmLimit: value } : m)),
+                            }));
+                          }}
+                        />
+                      </label>
+                      <label className="provider-center-model-rpm">
+                        <span>RPD</span>
+                        <input
+                          aria-label={`${model.label} RPD 限制`}
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="0"
+                          value={model.rpdLimit || ''}
+                          onChange={(event) => {
+                            const value = parseLimitInput(event.target.value);
+                            updateProfile((profile) => ({
+                              ...profile,
+                              models: profile.models.map((m) => (m.id === model.id ? { ...m, rpdLimit: value } : m)),
                             }));
                           }}
                         />

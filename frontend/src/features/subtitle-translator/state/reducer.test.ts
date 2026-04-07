@@ -7,6 +7,11 @@ describe('subtitleTranslatorReducer', () => {
   const providerCenter: ProviderCenterStateData = {
     version: 1,
     defaultProvider: 'openai-compatible',
+    limits: {
+      globalRpmLimit: 0,
+      globalRpdLimit: 0,
+      rateLimitInterruptThreshold: 3,
+    },
     families: {
       google: {
         id: 'google',
@@ -30,8 +35,10 @@ describe('subtitleTranslatorReducer', () => {
               disableThinking: '',
             },
             capabilities: {},
+            rpmLimit: 0,
+            rpdLimit: 0,
             models: [
-              { id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'manual', rpmLimit: 0 },
+              { id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
             ],
             modelDiscovery: {
               sourceMode: 'manual',
@@ -69,9 +76,11 @@ describe('subtitleTranslatorReducer', () => {
               model: 'gpt-4o-mini',
             },
             capabilities: {},
+            rpmLimit: 0,
+            rpdLimit: 0,
             models: [
-              { id: 'gpt-4o-mini', label: 'gpt-4o-mini', enabled: true, source: 'manual', rpmLimit: 0 },
-              { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual', rpmLimit: 0 },
+              { id: 'gpt-4o-mini', label: 'gpt-4o-mini', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
+              { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
             ],
             modelDiscovery: {
               sourceMode: 'manual',
@@ -110,8 +119,10 @@ describe('subtitleTranslatorReducer', () => {
               providerLabel: 'Anthropic',
             },
             capabilities: {},
+            rpmLimit: 0,
+            rpdLimit: 0,
             models: [
-              { id: 'claude-sonnet', label: 'claude-sonnet', enabled: true, source: 'manual', rpmLimit: 0 },
+              { id: 'claude-sonnet', label: 'claude-sonnet', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
             ],
             modelDiscovery: {
               sourceMode: 'manual',
@@ -151,7 +162,9 @@ describe('subtitleTranslatorReducer', () => {
               modelType: 'llm',
             },
             capabilities: {},
-            models: [{ id: 'llm', label: 'llm', enabled: true, source: 'manual', rpmLimit: 0 }],
+            rpmLimit: 0,
+            rpdLimit: 0,
+            models: [{ id: 'llm', label: 'llm', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 }],
             modelDiscovery: {
               sourceMode: 'manual',
               supportsModelDiscovery: false,
@@ -214,6 +227,7 @@ describe('subtitleTranslatorReducer', () => {
     const next = subtitleTranslatorReducer(state, {
       type: 'fileLoaded',
       fileName: 'demo.srt',
+      rawContent: 'demo',
       entries: [
         {
           idx: 1,

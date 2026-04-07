@@ -9,7 +9,7 @@ import type {
 } from '../types';
 import { loadProviderProfiles, type ProviderProfileStorageData } from '../config-storage';
 import type { ProviderCenterStateData } from '../provider-center-api';
-import { cloneWorkflowTemplate, type WorkflowTemplateStateData } from '../workflow-types';
+import { cloneWorkflowTemplate, type WorkflowTemplate, type WorkflowTemplateStateData } from '../workflow-types';
 import {
   ensureDistinctTarget,
   getDefaultTargets,
@@ -19,7 +19,7 @@ import {
 
 export type SubtitleTranslatorAction =
   | { type: 'reset' }
-  | { type: 'fileLoaded'; fileName: string; entries: SubtitleEntry[] }
+  | { type: 'fileLoaded'; fileName: string; rawContent: string; entries: SubtitleEntry[] }
   | { type: 'fileLoadFailed'; error: string }
   | { type: 'hydrateProviderCenter'; providerCenter: ProviderCenterStateData }
   | { type: 'hydrateWorkflowTemplates'; workflowTemplates: WorkflowTemplateStateData }
@@ -37,8 +37,27 @@ export type SubtitleTranslatorAction =
   | { type: 'setLogs'; logs: TranslationLogEntry[] }
   | { type: 'appendLog'; log: TranslationLogEntry }
   | { type: 'setDisplay'; display: SubtitleEntry[] }
+  | {
+      type: 'restoreWorkflowRun';
+      payload: {
+        fileName: string;
+        sourceContent: string;
+        entries: SubtitleEntry[];
+        display: SubtitleEntry[];
+        translationConfig: TranslationConfig;
+        workflowTemplates: WorkflowTemplateStateData;
+        activeTemplateId: string | null;
+        workflowDraft: WorkflowTemplate | null;
+        logs: TranslationLogEntry[];
+        progress: number;
+        runStatus: SubtitleTranslatorState['runStatus'];
+        pausedSnapshot: SubtitleTranslatorState['pausedSnapshot'];
+      };
+    }
   | { type: 'setFilter'; filter: SubtitleFilter }
   | { type: 'setStep'; step: WorkflowStep }
+  | { type: 'setRunStatus'; status: SubtitleTranslatorState['runStatus'] }
+  | { type: 'setPausedSnapshot'; snapshot: SubtitleTranslatorState['pausedSnapshot'] }
   | { type: 'beginRetryAll' }
   | { type: 'finishRetryAll'; display: SubtitleEntry[] }
   | { type: 'beginRetrySingle'; index: number }
@@ -60,6 +79,7 @@ export function createInitialState(
   return {
     step: 'upload',
     fileName: '',
+    sourceContent: '',
     entries: [],
     display: [],
     providerCenter: null,
@@ -80,6 +100,8 @@ export function createInitialState(
     advancedParamsOpen: false,
     progress: 0,
     logs: [],
+    runStatus: 'idle',
+    pausedSnapshot: null,
     filter: 'all',
     error: null,
     isRetrying: false,
@@ -99,10 +121,13 @@ export function subtitleTranslatorReducer(
         ...state,
         step: 'config',
         fileName: action.fileName,
+        sourceContent: action.rawContent,
         entries: action.entries,
         display: action.entries,
         progress: 0,
         logs: [],
+        runStatus: 'idle',
+        pausedSnapshot: null,
         error: null,
         filter: 'all',
         isRetrying: false,
@@ -259,6 +284,24 @@ export function subtitleTranslatorReducer(
         ...state,
         display: action.display,
       };
+    case 'restoreWorkflowRun':
+      return {
+        ...state,
+        step: action.payload.runStatus === 'completed' ? 'done' : 'config',
+        fileName: action.payload.fileName,
+        sourceContent: action.payload.sourceContent,
+        entries: action.payload.entries,
+        display: action.payload.display,
+        translationConfig: action.payload.translationConfig,
+        workflowTemplates: action.payload.workflowTemplates,
+        activeTemplateId: action.payload.activeTemplateId,
+        workflowDraft: action.payload.workflowDraft,
+        logs: action.payload.logs,
+        progress: action.payload.progress,
+        runStatus: action.payload.runStatus,
+        pausedSnapshot: action.payload.pausedSnapshot,
+        error: null,
+      };
     case 'setFilter':
       return {
         ...state,
@@ -268,6 +311,16 @@ export function subtitleTranslatorReducer(
       return {
         ...state,
         step: action.step,
+      };
+    case 'setRunStatus':
+      return {
+        ...state,
+        runStatus: action.status,
+      };
+    case 'setPausedSnapshot':
+      return {
+        ...state,
+        pausedSnapshot: action.snapshot,
       };
     case 'beginRetryAll':
       return {

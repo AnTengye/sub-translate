@@ -2,10 +2,16 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/feedback/ToastProvider';
 import SubtitleTranslatorPage from './SubtitleTranslatorPage';
+import { createWorkflowRunExport } from './workflow-run-api';
 
 const providerCenterState = {
   version: 1,
   defaultProvider: 'openai-compatible',
+  limits: {
+    globalRpmLimit: 0,
+    globalRpdLimit: 0,
+    rateLimitInterruptThreshold: 3,
+  },
   families: {
     google: {
       id: 'google',
@@ -34,7 +40,9 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: true,
           },
-          models: [{ id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'manual' }],
+          rpmLimit: 0,
+          rpdLimit: 0,
+          models: [{ id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 }],
           modelDiscovery: {
             sourceMode: 'auto',
             supportsModelDiscovery: true,
@@ -76,9 +84,11 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: true,
           },
+          rpmLimit: 0,
+          rpdLimit: 0,
           models: [
-            { id: 'qwen-local', label: 'qwen-local', enabled: true, source: 'manual' },
-            { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual' },
+            { id: 'qwen-local', label: 'qwen-local', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
+            { id: 'gpt-4.1-mini', label: 'gpt-4.1-mini', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 },
           ],
           modelDiscovery: {
             sourceMode: 'auto',
@@ -122,7 +132,9 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: false,
           },
-          models: [{ id: 'claude-sonnet', label: 'claude-sonnet', enabled: true, source: 'manual' }],
+          rpmLimit: 0,
+          rpdLimit: 0,
+          models: [{ id: 'claude-sonnet', label: 'claude-sonnet', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 }],
           modelDiscovery: {
             sourceMode: 'manual',
             supportsModelDiscovery: false,
@@ -168,7 +180,9 @@ const providerCenterState = {
             supportsManualModelManagement: true,
             supportsThinkingToggle: false,
           },
-          models: [{ id: 'llm', label: 'llm', enabled: true, source: 'manual' }],
+          rpmLimit: 0,
+          rpdLimit: 0,
+          models: [{ id: 'llm', label: 'llm', enabled: true, source: 'manual', rpmLimit: 0, rpdLimit: 0 }],
           modelDiscovery: {
             sourceMode: 'manual',
             supportsModelDiscovery: false,
@@ -454,6 +468,72 @@ async function importSubtitle() {
 }
 
 describe('SubtitleTranslatorPage workflow mode', () => {
+  it('imports a workflow snapshot from the homepage without re-uploading subtitles', async () => {
+    renderPage();
+
+    const snapshotFile = new File(
+      [
+        JSON.stringify(
+          createWorkflowRunExport({
+            fileName: 'resume.srt',
+            sourceContent: '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n',
+            entries: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: null,
+                status: 'pending',
+              },
+            ],
+            display: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: '你好',
+                status: 'done',
+              },
+            ],
+            providerCenter: providerCenterState as never,
+            workflowTemplates: workflowTemplates as never,
+            activeTemplateId: 'quality-first',
+            workflowDraft: workflowTemplates.templates[0] as never,
+            translationConfig: { batchSize: 20, contextLines: 3, temperature: 0.3 },
+            logs: [{ t: '12:00:00', msg: '⏸️ 工作流已暂停，可稍后继续' }],
+            progress: 50,
+            runStatus: 'paused',
+            pausedSnapshot: {
+              version: 1,
+              stageIndex: 0,
+              nodeIndex: 0,
+              batchIndex: 1,
+              completedBatches: 1,
+              pauseReason: 'user',
+              currentTexts: ['你好'],
+              candidateTracks: [],
+              judgeDecisions: [],
+              selectedTrackByEntry: ['current'],
+              nodeRuntime: {},
+            },
+            candidateTracks: [],
+            judgeDecisions: [],
+            selectedTrackByEntry: ['current'],
+            fallbackTexts: ['你好'],
+          }),
+        ),
+      ],
+      'resume.workflow.json',
+      { type: 'application/json' },
+    );
+
+    fireEvent.change(screen.getByLabelText('导入工作流文件'), { target: { files: [snapshotFile] } });
+
+    expect(await screen.findByText('resume.srt')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /继续工作流/i })).toBeInTheDocument();
+    expect(screen.getByText('你好', { selector: '.sub-text.translated' })).toBeInTheDocument();
+  });
+
   it('loads workflow templates and switches active template', async () => {
     renderPage();
     await importSubtitle();

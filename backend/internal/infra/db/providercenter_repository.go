@@ -17,6 +17,9 @@ const appConfigID = "app-config"
 type AppConfigRecord struct {
 	ID              string `gorm:"primaryKey;size:64"`
 	DefaultProvider string `gorm:"size:64;not null"`
+	GlobalRpmLimit  int    `gorm:"not null;default:0"`
+	GlobalRpdLimit  int    `gorm:"not null;default:0"`
+	InterruptThreshold int `gorm:"not null;default:3"`
 }
 
 type ProviderFamilyRecord struct {
@@ -35,6 +38,8 @@ type ProviderProfileRecord struct {
 	ConnectionJSON      string `gorm:"type:text;not null"`
 	SettingsJSON        string `gorm:"type:text;not null"`
 	CapabilitiesJSON    string `gorm:"type:text;not null"`
+	RpmLimit            int    `gorm:"not null;default:0"`
+	RpdLimit            int    `gorm:"not null;default:0"`
 	AvailableModelsJSON string `gorm:"type:text;not null"`
 	ModelDiscoveryJSON  string `gorm:"type:text;not null"`
 	HealthJSON          string `gorm:"type:text;not null"`
@@ -48,6 +53,7 @@ type ProviderModelRecord struct {
 	Enabled   bool   `gorm:"not null"`
 	Source    string `gorm:"size:32;not null"`
 	RpmLimit  int    `gorm:"not null;default:0"`
+	RpdLimit  int    `gorm:"not null;default:0"`
 }
 
 type ProviderCenterRepository struct {
@@ -116,6 +122,7 @@ func (r *ProviderCenterRepository) Read(ctx context.Context) (domainprovider.Sta
 			Enabled:  record.Enabled,
 			Source:   record.Source,
 			RpmLimit: record.RpmLimit,
+			RpdLimit: record.RpdLimit,
 		})
 	}
 
@@ -130,6 +137,8 @@ func (r *ProviderCenterRepository) Read(ctx context.Context) (domainprovider.Sta
 			Connection:      map[string]string{},
 			Settings:        map[string]string{},
 			Capabilities:    map[string]bool{},
+			RpmLimit:        record.RpmLimit,
+			RpdLimit:        record.RpdLimit,
 			Models:          emptyModels(modelsByProfileID[record.ID]),
 			AvailableModels: []domainprovider.Model{},
 			ModelDiscovery:  domainprovider.ModelDiscovery{},
@@ -173,6 +182,11 @@ func (r *ProviderCenterRepository) Read(ctx context.Context) (domainprovider.Sta
 	return domainprovider.State{
 		Version:         1,
 		DefaultProvider: config.DefaultProvider,
+		Limits: domainprovider.Limits{
+			GlobalRpmLimit: config.GlobalRpmLimit,
+			GlobalRpdLimit: config.GlobalRpdLimit,
+			RateLimitInterruptThreshold: config.InterruptThreshold,
+		},
 		Families:        families,
 	}, nil
 }
@@ -182,6 +196,9 @@ func (r *ProviderCenterRepository) Save(ctx context.Context, state domainprovide
 		config := AppConfigRecord{
 			ID:              appConfigID,
 			DefaultProvider: state.DefaultProvider,
+			GlobalRpmLimit:  state.Limits.GlobalRpmLimit,
+			GlobalRpdLimit:  state.Limits.GlobalRpdLimit,
+			InterruptThreshold: state.Limits.RateLimitInterruptThreshold,
 		}
 		if err := tx.Save(&config).Error; err != nil {
 			return err
@@ -243,6 +260,8 @@ func (r *ProviderCenterRepository) Save(ctx context.Context, state domainprovide
 					ConnectionJSON:      connectionJSON,
 					SettingsJSON:        settingsJSON,
 					CapabilitiesJSON:    capabilitiesJSON,
+					RpmLimit:            profile.RpmLimit,
+					RpdLimit:            profile.RpdLimit,
 					AvailableModelsJSON: availableModelsJSON,
 					ModelDiscoveryJSON:  modelDiscoveryJSON,
 					HealthJSON:          healthJSON,
@@ -260,6 +279,7 @@ func (r *ProviderCenterRepository) Save(ctx context.Context, state domainprovide
 						Enabled:   model.Enabled,
 						Source:    model.Source,
 						RpmLimit:  model.RpmLimit,
+						RpdLimit:  model.RpdLimit,
 					}
 					if err := tx.Create(&modelRecord).Error; err != nil {
 						return err
