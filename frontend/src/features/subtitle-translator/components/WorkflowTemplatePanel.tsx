@@ -1,4 +1,5 @@
 import type { ProviderTargetOption } from '../target-selection';
+import type { WorkflowRunStatus } from '../types';
 import type { WorkflowTemplate, WorkflowTemplateStateData } from '../workflow-types';
 import { WorkflowStageCard } from './WorkflowStageCard';
 
@@ -11,6 +12,8 @@ interface WorkflowTemplatePanelProps {
   contextLines: number;
   temperature: number;
   busy: boolean;
+  runStatus: WorkflowRunStatus;
+  canResume: boolean;
   onTemplateChange: (templateId: string) => void;
   onBatchSizeChange: (value: number) => void;
   onContextLinesChange: (value: number) => void;
@@ -18,7 +21,10 @@ interface WorkflowTemplatePanelProps {
   onNodeTargetChange: (stageId: string, nodeId: string, value: string) => void;
   onSave: () => void | Promise<void>;
   onStart: () => void | Promise<void>;
+  onPause: () => void;
+  onResume: () => void | Promise<void>;
   onCancel: () => void;
+  onExport: () => void;
 }
 
 export function WorkflowTemplatePanel({
@@ -30,6 +36,8 @@ export function WorkflowTemplatePanel({
   contextLines,
   temperature,
   busy,
+  runStatus,
+  canResume,
   onTemplateChange,
   onBatchSizeChange,
   onContextLinesChange,
@@ -37,7 +45,10 @@ export function WorkflowTemplatePanel({
   onNodeTargetChange,
   onSave,
   onStart,
+  onPause,
+  onResume,
   onCancel,
+  onExport,
 }: WorkflowTemplatePanelProps) {
   return (
     <aside className="sidebar" aria-label="工作流配置">
@@ -118,14 +129,29 @@ export function WorkflowTemplatePanel({
       <button className="provider-btn workflow-save-btn" type="button" disabled={busy} onClick={() => void onSave()}>
         保存工作流模板
       </button>
+      <button className="provider-btn workflow-save-btn" type="button" disabled={!workflowDraft} onClick={onExport}>
+        导出工作流
+      </button>
       {busy ? (
-        <button className="start-btn" type="button" onClick={onCancel}>
-          终止工作流
-        </button>
+        <>
+          <button className="provider-btn workflow-save-btn" type="button" onClick={onPause}>
+            暂停工作流
+          </button>
+          <button className="start-btn" type="button" onClick={onCancel}>
+            终止工作流
+          </button>
+        </>
       ) : (
-        <button className="start-btn" type="button" disabled={!workflowDraft} onClick={() => void onStart()}>
-          开始工作流
-        </button>
+        <>
+          {canResume && runStatus !== 'completed' ? (
+            <button className="provider-btn workflow-save-btn" type="button" onClick={() => void onResume()}>
+              继续工作流
+            </button>
+          ) : null}
+          <button className="start-btn" type="button" disabled={!workflowDraft} onClick={() => void onStart()}>
+            开始工作流
+          </button>
+        </>
       )}
     </aside>
   );

@@ -6,6 +6,13 @@ export interface ProviderCenterModel {
   enabled: boolean;
   source: 'auto' | 'manual' | 'mixed';
   rpmLimit: number;
+  rpdLimit: number;
+}
+
+export interface ProviderCenterLimits {
+  globalRpmLimit: number;
+  globalRpdLimit: number;
+  rateLimitInterruptThreshold: number;
 }
 
 export interface ProviderCenterProfile {
@@ -17,6 +24,8 @@ export interface ProviderCenterProfile {
   connection: Record<string, string>;
   settings: Record<string, string>;
   capabilities: Record<string, boolean>;
+  rpmLimit: number;
+  rpdLimit: number;
   models: ProviderCenterModel[];
   modelDiscovery: {
     sourceMode: string;
@@ -45,12 +54,18 @@ export interface ProviderCenterFamily {
 export interface ProviderCenterStateData {
   version: 1;
   defaultProvider: ProviderId;
+  limits: ProviderCenterLimits;
   families: Record<ProviderId, ProviderCenterFamily>;
 }
 
 function normalizeProviderCenterState(input: ProviderCenterStateData): ProviderCenterStateData {
   return {
     ...input,
+    limits: {
+      globalRpmLimit: Number(input.limits?.globalRpmLimit ?? 0),
+      globalRpdLimit: Number(input.limits?.globalRpdLimit ?? 0),
+      rateLimitInterruptThreshold: Math.max(1, Number(input.limits?.rateLimitInterruptThreshold ?? 3)),
+    },
     families: Object.fromEntries(
       (Object.entries(input.families) as [ProviderId, ProviderCenterFamily][]).map(([familyId, family]) => [
         familyId,
@@ -58,7 +73,15 @@ function normalizeProviderCenterState(input: ProviderCenterStateData): ProviderC
           ...family,
           profiles: (Array.isArray(family.profiles) ? family.profiles : []).map((profile) => ({
             ...profile,
-            models: Array.isArray(profile.models) ? profile.models : [],
+            rpmLimit: Number(profile.rpmLimit ?? 0),
+            rpdLimit: Number(profile.rpdLimit ?? 0),
+            models: Array.isArray(profile.models)
+              ? profile.models.map((model) => ({
+                  ...model,
+                  rpmLimit: Number(model.rpmLimit ?? 0),
+                  rpdLimit: Number(model.rpdLimit ?? 0),
+                }))
+              : [],
             availableModels: Array.isArray(profile.availableModels) ? profile.availableModels : [],
           })),
         },
@@ -118,6 +141,11 @@ export async function checkProviderProfile(
     profile: normalizeProviderCenterState({
       version: 1,
       defaultProvider: family,
+      limits: {
+        globalRpmLimit: 0,
+        globalRpdLimit: 0,
+        rateLimitInterruptThreshold: 3,
+      },
       families: {
         [family]: {
           id: family,
@@ -150,6 +178,11 @@ export async function fetchProviderProfileModelCatalog(
   const normalizedProfile = normalizeProviderCenterState({
     version: 1,
     defaultProvider: family,
+    limits: {
+      globalRpmLimit: 0,
+      globalRpdLimit: 0,
+      rateLimitInterruptThreshold: 3,
+    },
     families: {
       [family]: {
         id: family,

@@ -54,7 +54,7 @@ type ProviderCenterReader interface {
 }
 
 type RpmWaiter interface {
-	Wait(ctx context.Context, key string, limit int) error
+	Wait(ctx context.Context, key string, rpm int, rpd int) error
 }
 
 type Dependencies struct {
@@ -144,10 +144,36 @@ func (s *Service) waitForRpm(ctx context.Context, profile *domainprovider.Profil
 		return nil
 	}
 
+	globalRpm := 0
+	globalRpd := 0
+	if s.providerCenterReader != nil {
+		if state, err := s.providerCenterReader.Read(ctx); err == nil {
+			globalRpm = state.Limits.GlobalRpmLimit
+			globalRpd = state.Limits.GlobalRpdLimit
+		}
+	}
+
 	for _, model := range profile.Models {
-		if model.ID == modelID && model.RpmLimit > 0 {
+		if model.ID == modelID {
+			rpmLimit := model.RpmLimit
+			if rpmLimit <= 0 {
+				rpmLimit = profile.RpmLimit
+			}
+			if rpmLimit <= 0 {
+				rpmLimit = globalRpm
+			}
+			rpdLimit := model.RpdLimit
+			if rpdLimit <= 0 {
+				rpdLimit = profile.RpdLimit
+			}
+			if rpdLimit <= 0 {
+				rpdLimit = globalRpd
+			}
+			if rpmLimit <= 0 && rpdLimit <= 0 {
+				return nil
+			}
 			key := profile.ID + ":" + model.ID
-			return s.rpmLimiter.Wait(ctx, key, model.RpmLimit)
+			return s.rpmLimiter.Wait(ctx, key, rpmLimit, rpdLimit)
 		}
 	}
 

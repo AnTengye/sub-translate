@@ -32,6 +32,7 @@ export function useFileImport(dispatch: Dispatch<SubtitleTranslatorAction>) {
       dispatch({
         type: 'fileLoaded',
         fileName: file.name,
+        rawContent: content,
         entries: parsed,
       });
     } catch (error) {

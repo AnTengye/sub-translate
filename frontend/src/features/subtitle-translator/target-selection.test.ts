@@ -5,6 +5,11 @@ import { buildProviderRequestConfig } from './target-selection';
 const providerCenter: ProviderCenterStateData = {
   version: 1,
   defaultProvider: 'google',
+  limits: {
+    globalRpmLimit: 0,
+    globalRpdLimit: 0,
+    rateLimitInterruptThreshold: 3,
+  },
   families: {
     google: {
       id: 'google',
@@ -28,7 +33,9 @@ const providerCenter: ProviderCenterStateData = {
             disableThinking: 'true',
           },
           capabilities: {},
-          models: [{ id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'auto', rpmLimit: 0 }],
+          rpmLimit: 0,
+          rpdLimit: 0,
+          models: [{ id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'auto', rpmLimit: 0, rpdLimit: 0 }],
           modelDiscovery: {
             sourceMode: 'auto',
             supportsModelDiscovery: true,

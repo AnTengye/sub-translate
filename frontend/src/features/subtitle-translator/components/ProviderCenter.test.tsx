@@ -7,6 +7,11 @@ import { ProviderCenter } from './ProviderCenter';
 const providerCenterState: ProviderCenterStateData = {
   version: 1,
   defaultProvider: 'google',
+  limits: {
+    globalRpmLimit: 0,
+    globalRpdLimit: 0,
+    rateLimitInterruptThreshold: 3,
+  },
   families: {
     google: {
       id: 'google',
@@ -35,6 +40,8 @@ const providerCenterState: ProviderCenterStateData = {
             supportsModelDiscovery: true,
             supportsThinkingToggle: true,
           },
+          rpmLimit: 0,
+          rpdLimit: 0,
           models: [
             {
               id: 'models/gemma-4-26b-a4b-it',
@@ -42,6 +49,7 @@ const providerCenterState: ProviderCenterStateData = {
               enabled: true,
               source: 'auto',
               rpmLimit: 0,
+              rpdLimit: 0,
             },
           ],
           availableModels: [],
@@ -212,5 +220,58 @@ describe('ProviderCenter', () => {
     expect(confirmSpy).toHaveBeenCalled();
     expect(screen.getByText('当前没有可编辑的配置')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: '+ 添加' }).at(-1)).toBeInTheDocument();
+  });
+
+  it('saves layered global, profile, and model limits', () => {
+    const onSave = vi.fn().mockResolvedValue(undefined);
+
+    render(
+      <ToastProvider>
+        <ProviderCenter
+          isOpen
+          initialProvider="google"
+          providerCenter={providerCenterState}
+          disableSave={false}
+          onClose={vi.fn()}
+          onSave={onSave}
+          onCheck={vi.fn()}
+          onLoadModelCatalog={vi.fn()}
+        />
+      </ToastProvider>,
+    );
+
+    fireEvent.change(screen.getByLabelText('全局 RPM 默认限制'), { target: { value: '120' } });
+    fireEvent.change(screen.getByLabelText('全局 RPD 默认限制'), { target: { value: '2400' } });
+    fireEvent.change(screen.getByLabelText('限流中断阈值'), { target: { value: '5' } });
+    fireEvent.change(screen.getByLabelText('Profile RPM 限制'), { target: { value: '60' } });
+    fireEvent.change(screen.getByLabelText('Profile RPD 限制'), { target: { value: '1000' } });
+    fireEvent.change(screen.getByLabelText('models/gemma-4-26b-a4b-it RPD 限制'), { target: { value: '200' } });
+    fireEvent.click(screen.getAllByRole('button', { name: '保存配置' }).at(-1)!);
+
+    expect(onSave).toHaveBeenCalledWith(
+      expect.objectContaining({
+        limits: {
+          globalRpmLimit: 120,
+          globalRpdLimit: 2400,
+          rateLimitInterruptThreshold: 5,
+        },
+        families: expect.objectContaining({
+          google: expect.objectContaining({
+            profiles: [
+              expect.objectContaining({
+                rpmLimit: 60,
+                rpdLimit: 1000,
+                models: [
+                  expect.objectContaining({
+                    id: 'models/gemma-4-26b-a4b-it',
+                    rpdLimit: 200,
+                  }),
+                ],
+              }),
+            ],
+          }),
+        }),
+      }),
+    );
   });
 });

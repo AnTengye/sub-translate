@@ -6,6 +6,13 @@ type Model struct {
 	Enabled  bool   `json:"enabled"`
 	Source   string `json:"source"`
 	RpmLimit int    `json:"rpmLimit"`
+	RpdLimit int    `json:"rpdLimit"`
+}
+
+type Limits struct {
+	GlobalRpmLimit             int `json:"globalRpmLimit"`
+	GlobalRpdLimit             int `json:"globalRpdLimit"`
+	RateLimitInterruptThreshold int `json:"rateLimitInterruptThreshold"`
 }
 
 type Health struct {
@@ -32,6 +39,8 @@ type Profile struct {
 	Connection      map[string]string `json:"connection"`
 	Settings        map[string]string `json:"settings"`
 	Capabilities    map[string]bool   `json:"capabilities"`
+	RpmLimit        int               `json:"rpmLimit"`
+	RpdLimit        int               `json:"rpdLimit"`
 	Models          []Model           `json:"models"`
 	AvailableModels []Model           `json:"availableModels,omitempty"`
 	ModelDiscovery  ModelDiscovery    `json:"modelDiscovery"`
@@ -49,5 +58,6 @@ type Family struct {
 type State struct {
 	Version         int               `json:"version"`
 	DefaultProvider string            `json:"defaultProvider"`
+	Limits          Limits            `json:"limits"`
 	Families        map[string]Family `json:"families"`
 }

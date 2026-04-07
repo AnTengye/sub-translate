@@ -3,9 +3,10 @@ import { useRef, useState } from 'react';
 interface UploadScreenProps {
   error: string | null;
   onFileSelected: (file: File | null | undefined) => void | Promise<void>;
+  onWorkflowImportSelected: (file: File | null | undefined) => void | Promise<void>;
 }
 
-export function UploadScreen({ error, onFileSelected }: UploadScreenProps) {
+export function UploadScreen({ error, onFileSelected, onWorkflowImportSelected }: UploadScreenProps) {
   const dragDepthRef = useRef(0);
   const [isDragging, setIsDragging] = useState(false);
 
@@ -83,6 +84,23 @@ export function UploadScreen({ error, onFileSelected }: UploadScreenProps) {
             <strong>导入后直达统一操作区</strong>
             <p>左侧只保留配置，右侧集中执行、日志和结果，避免操作分散。</p>
           </div>
+          <label className="upload-note-card" htmlFor="workflow-import-input">
+            <span className="overview-label">RESUME</span>
+            <strong>导入工作流快照</strong>
+            <p>恢复原始字幕、模板、进度与中间结果，不需要重新上传字幕文件。</p>
+            <span className="upload-card-button">选择工作流文件</span>
+            <input
+              id="workflow-import-input"
+              aria-label="导入工作流文件"
+              className="sr-only-input"
+              type="file"
+              accept=".json"
+              onChange={(event) => {
+                resetDragState();
+                void onWorkflowImportSelected(event.target.files?.[0]);
+              }}
+            />
+          </label>
         </div>
       </section>
 

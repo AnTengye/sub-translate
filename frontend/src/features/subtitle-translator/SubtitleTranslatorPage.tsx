@@ -18,7 +18,9 @@ import { createInitialState, subtitleTranslatorReducer } from './state/reducer';
 import { buildProviderRequestConfig, buildProviderTargetOptions, type ProviderTarget } from './target-selection';
 import { executeWorkflowTemplate, type WorkflowCandidateTrack, type WorkflowJudgeDecision } from './utils/workflow';
 import { fetchWorkflowTemplates, saveWorkflowTemplates } from './workflow-api';
+import { createWorkflowRunExport, parseWorkflowRunExport } from './workflow-run-api';
 import type { WorkflowTemplate } from './workflow-types';
+import { isWorkflowPausedError } from './utils/workflow';
 
 function buildDisplay(entries: SubtitleEntry[], texts: string[]) {
   return entries.map((entry, index) => {
@@ -75,6 +77,18 @@ function isCancellationError(error: unknown) {
   return error instanceof Error && (error.name === 'AbortError' || error.message === 'cancelled');
 }
 
+async function readBrowserFile(file: File) {
+  if (typeof file.text === 'function') {
+    return file.text();
+  }
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result ?? ''));
+    reader.onerror = () => reject(reader.error ?? new Error('文件读取失败'));
+    reader.readAsText(file, 'utf-8');
+  });
+}
+
 export default function SubtitleTranslatorPage() {
   const [state, dispatch] = useReducer(subtitleTranslatorReducer, undefined, createInitialState);
   const [busy, setBusy] = useState(false);
@@ -84,6 +98,7 @@ export default function SubtitleTranslatorPage() {
   const [fallbackTexts, setFallbackTexts] = useState<string[]>([]);
   const [isProviderCenterOpen, setIsProviderCenterOpen] = useState(false);
   const workflowAbortRef = useRef<AbortController | null>(null);
+  const pauseRequestedRef = useRef(false);
   const displayRef = useRef(state.display);
   const toast = useToast();
   const { importFile } = useFileImport(dispatch);
@@ -126,7 +141,47 @@ export default function SubtitleTranslatorPage() {
   );
 
   if (state.step === 'upload') {
-    return <UploadScreen error={state.error} onFileSelected={importFile} />;
+    return (
+      <UploadScreen
+        error={state.error}
+        onFileSelected={importFile}
+        onWorkflowImportSelected={async (file) => {
+          if (!file) {
+            return;
+          }
+          try {
+            const raw = await readBrowserFile(file);
+            const payload = parseWorkflowRunExport(raw);
+            dispatch({
+              type: 'restoreWorkflowRun',
+              payload: {
+                fileName: payload.run.fileName,
+                sourceContent: payload.run.sourceContent,
+                entries: payload.run.entries,
+                display: payload.run.display,
+                translationConfig: payload.run.translationConfig,
+                workflowTemplates: payload.run.workflowTemplates,
+                activeTemplateId: payload.run.activeTemplateId,
+                workflowDraft: payload.run.workflowDraft,
+                logs: payload.run.logs,
+                progress: payload.run.progress,
+                runStatus: payload.run.runStatus,
+                pausedSnapshot: payload.run.pausedSnapshot,
+              },
+            });
+            setCandidateTracks(payload.run.candidateTracks);
+            setJudgeDecisions(payload.run.judgeDecisions);
+            setSelectedTrackByEntry(payload.run.selectedTrackByEntry);
+            setFallbackTexts(payload.run.fallbackTexts);
+          } catch (error) {
+            dispatch({
+              type: 'fileLoadFailed',
+              error: error instanceof Error ? error.message : '导入工作流失败',
+            });
+          }
+        }}
+      />
+    );
   }
 
   const doneCount = state.display.filter((entry) => entry.status === 'done').length;
@@ -168,11 +223,14 @@ export default function SubtitleTranslatorPage() {
     }
 
     setBusy(true);
+    pauseRequestedRef.current = false;
     setCandidateTracks([]);
     setJudgeDecisions([]);
     setSelectedTrackByEntry([]);
     setFallbackTexts([]);
     dispatch({ type: 'startTranslation' });
+    dispatch({ type: 'setRunStatus', status: 'running' });
+    dispatch({ type: 'setPausedSnapshot', snapshot: null });
     
     dispatch({
       type: 'appendLog',
@@ -213,6 +271,8 @@ export default function SubtitleTranslatorPage() {
         contextLines: state.translationConfig.contextLines,
         delayMs: 150,
         signal: controller.signal,
+        initialSnapshot: state.pausedSnapshot ?? undefined,
+        shouldPause: () => pauseRequestedRef.current,
         onLog: (message) =>
           dispatch({
             type: 'appendLog',
@@ -283,6 +343,8 @@ export default function SubtitleTranslatorPage() {
       setSelectedTrackByEntry(nextSelectedTracks);
       setFallbackTexts(nextFallbackTexts);
       dispatch({ type: 'translationDone', display: buildDisplay(state.entries, displayTexts) });
+      dispatch({ type: 'setRunStatus', status: 'completed' });
+      dispatch({ type: 'setPausedSnapshot', snapshot: null });
 
       const totalDuration = ((Date.now() - workflowStartTime) / 1000).toFixed(1);
       dispatch({
@@ -304,6 +366,19 @@ export default function SubtitleTranslatorPage() {
         controller.signal,
       );
     } catch (error) {
+      if (isWorkflowPausedError(error)) {
+        dispatch({ type: 'setPausedSnapshot', snapshot: error.snapshot });
+        dispatch({ type: 'setRunStatus', status: error.snapshot.pauseReason === 'interrupted' ? 'paused-interrupted' : 'paused' });
+        dispatch({ type: 'setStep', step: 'config' });
+        dispatch({
+          type: 'appendLog',
+          log: {
+            t: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            msg: error.snapshot.pauseReason === 'interrupted' ? '⛔ 工作流因限流连续命中已中断，可调整配置后继续' : '⏸️ 工作流已暂停，可稍后继续',
+          },
+        });
+        return;
+      }
       if (isCancellationError(error)) {
         dispatch({
           type: 'appendLog',
@@ -313,6 +388,7 @@ export default function SubtitleTranslatorPage() {
           },
         });
         dispatch({ type: 'setError', error: null });
+        dispatch({ type: 'setRunStatus', status: 'idle' });
         dispatch({
           type: 'setStep',
           step: displayRef.current.some((entry) => entry.status === 'done') ? 'done' : 'config',
@@ -341,6 +417,7 @@ export default function SubtitleTranslatorPage() {
         type: 'translationFailed',
         error: errorMsg,
       });
+      dispatch({ type: 'setRunStatus', status: 'idle' });
       if (runId) {
         await finalizeTranslationRun(
           runId,
@@ -355,6 +432,35 @@ export default function SubtitleTranslatorPage() {
       workflowAbortRef.current = null;
       setBusy(false);
     }
+  }
+
+  function handleExportWorkflow() {
+    const payload = createWorkflowRunExport({
+      fileName: state.fileName,
+      sourceContent: state.sourceContent,
+      entries: state.entries,
+      display: state.display,
+      providerCenter: state.providerCenter,
+      workflowTemplates: state.workflowTemplates,
+      activeTemplateId: state.activeTemplateId,
+      workflowDraft: state.workflowDraft,
+      translationConfig: state.translationConfig,
+      logs: state.logs,
+      progress: state.progress,
+      runStatus: state.runStatus,
+      pausedSnapshot: state.pausedSnapshot,
+      candidateTracks,
+      judgeDecisions,
+      selectedTrackByEntry,
+      fallbackTexts,
+    });
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = state.fileName.replace(/\.[^.]+$/, '.workflow.json');
+    link.click();
+    URL.revokeObjectURL(url);
   }
 
   function handleNodeTargetChange(stageId: string, nodeId: string, value: string) {
@@ -439,6 +545,8 @@ export default function SubtitleTranslatorPage() {
           contextLines={state.translationConfig.contextLines}
           temperature={state.translationConfig.temperature}
           busy={busy}
+          runStatus={state.runStatus}
+          canResume={Boolean(state.pausedSnapshot)}
           onTemplateChange={(templateId) => dispatch({ type: 'selectWorkflowTemplate', templateId })}
           onBatchSizeChange={(value) =>
             dispatch({ type: 'updateTranslationConfig', key: 'batchSize', value })
@@ -452,7 +560,19 @@ export default function SubtitleTranslatorPage() {
           onNodeTargetChange={handleNodeTargetChange}
           onSave={handleSaveWorkflowTemplate}
           onStart={handleStartWorkflow}
+          onPause={() => {
+            pauseRequestedRef.current = true;
+            dispatch({
+              type: 'appendLog',
+              log: {
+                t: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+                msg: '⏳ 已请求暂停，将在当前批次完成后停下',
+              },
+            });
+          }}
+          onResume={handleStartWorkflow}
           onCancel={() => workflowAbortRef.current?.abort()}
+          onExport={handleExportWorkflow}
         />
 
         <section className="content workflow-content">
