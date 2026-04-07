@@ -18,6 +18,7 @@ interface WorkflowTemplatePanelProps {
   onNodeTargetChange: (stageId: string, nodeId: string, value: string) => void;
   onSave: () => void | Promise<void>;
   onStart: () => void | Promise<void>;
+  onCancel: () => void;
 }
 
 export function WorkflowTemplatePanel({
@@ -36,6 +37,7 @@ export function WorkflowTemplatePanel({
   onNodeTargetChange,
   onSave,
   onStart,
+  onCancel,
 }: WorkflowTemplatePanelProps) {
   return (
     <aside className="sidebar" aria-label="工作流配置">
@@ -116,9 +118,15 @@ export function WorkflowTemplatePanel({
       <button className="provider-btn workflow-save-btn" type="button" disabled={busy} onClick={() => void onSave()}>
         保存工作流模板
       </button>
-      <button className="start-btn" type="button" disabled={busy || !workflowDraft} onClick={() => void onStart()}>
-        {busy ? '工作流执行中…' : '开始工作流'}
-      </button>
+      {busy ? (
+        <button className="start-btn" type="button" onClick={onCancel}>
+          终止工作流
+        </button>
+      ) : (
+        <button className="start-btn" type="button" disabled={!workflowDraft} onClick={() => void onStart()}>
+          开始工作流
+        </button>
+      )}
     </aside>
   );
 }

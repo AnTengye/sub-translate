@@ -47,6 +47,7 @@ type ProviderModelRecord struct {
 	Label     string `gorm:"size:255;not null"`
 	Enabled   bool   `gorm:"not null"`
 	Source    string `gorm:"size:32;not null"`
+	RpmLimit  int    `gorm:"not null;default:0"`
 }
 
 type ProviderCenterRepository struct {
@@ -110,10 +111,11 @@ func (r *ProviderCenterRepository) Read(ctx context.Context) (domainprovider.Sta
 	modelsByProfileID := map[string][]domainprovider.Model{}
 	for _, record := range modelRecords {
 		modelsByProfileID[record.ProfileID] = append(modelsByProfileID[record.ProfileID], domainprovider.Model{
-			ID:      record.ModelKey,
-			Label:   record.Label,
-			Enabled: record.Enabled,
-			Source:  record.Source,
+			ID:       record.ModelKey,
+			Label:    record.Label,
+			Enabled:  record.Enabled,
+			Source:   record.Source,
+			RpmLimit: record.RpmLimit,
 		})
 	}
 
@@ -257,6 +259,7 @@ func (r *ProviderCenterRepository) Save(ctx context.Context, state domainprovide
 						Label:     model.Label,
 						Enabled:   model.Enabled,
 						Source:    model.Source,
+						RpmLimit:  model.RpmLimit,
 					}
 					if err := tx.Create(&modelRecord).Error; err != nil {
 						return err

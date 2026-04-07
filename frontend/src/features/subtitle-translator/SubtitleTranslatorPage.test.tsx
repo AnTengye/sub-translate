@@ -1,5 +1,4 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ToastProvider } from '../../components/ui/feedback/ToastProvider';
 import SubtitleTranslatorPage from './SubtitleTranslatorPage';
@@ -8,6 +7,50 @@ const providerCenterState = {
   version: 1,
   defaultProvider: 'openai-compatible',
   families: {
+    google: {
+      id: 'google',
+      label: 'Google',
+      description: '',
+      activeProfileId: 'google-default',
+      profiles: [
+        {
+          id: 'google-default',
+          family: 'google',
+          name: 'Google Local',
+          enabled: true,
+          isDefault: false,
+          connection: {
+            apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+            apiKey: 'google-key',
+          },
+          settings: {
+            model: 'models/gemini-2.5-flash',
+            providerLabel: 'Google',
+            disableThinking: '',
+          },
+          capabilities: {
+            supportsModelDiscovery: true,
+            supportsConnectionCheck: true,
+            supportsManualModelManagement: true,
+            supportsThinkingToggle: true,
+          },
+          models: [{ id: 'models/gemini-2.5-flash', label: 'models/gemini-2.5-flash', enabled: true, source: 'manual' }],
+          modelDiscovery: {
+            sourceMode: 'auto',
+            supportsModelDiscovery: true,
+            lastCheckedAt: null,
+            lastStatus: 'success',
+            lastError: null,
+          },
+          health: {
+            status: 'success',
+            summary: '连接配置有效，可继续进行模型检查或翻译',
+            lastCheckedAt: null,
+            error: null,
+          },
+        },
+      ],
+    },
     'openai-compatible': {
       id: 'openai-compatible',
       label: 'OpenAI Compatible',
@@ -371,6 +414,12 @@ function createFetchMock() {
   });
 }
 
+function createAbortError() {
+  const error = new Error('The operation was aborted.');
+  error.name = 'AbortError';
+  return error;
+}
+
 beforeEach(() => {
   vi.stubGlobal('fetch', createFetchMock());
 });
@@ -406,7 +455,6 @@ async function importSubtitle() {
 
 describe('SubtitleTranslatorPage workflow mode', () => {
   it('loads workflow templates and switches active template', async () => {
-    const user = userEvent.setup();
     renderPage();
     await importSubtitle();
 
@@ -414,23 +462,21 @@ describe('SubtitleTranslatorPage workflow mode', () => {
     expect(selector).toHaveValue('quality-first');
     expect(screen.getByText(/主翻译与补偿/i)).toBeInTheDocument();
 
-    await user.selectOptions(selector, 'compare');
+    fireEvent.change(selector, { target: { value: 'compare' } });
 
     expect(screen.getByText(/候选翻译/i)).toBeInTheDocument();
     expect(screen.getByText(/评估推荐/i)).toBeInTheDocument();
   });
 
   it('saves edited workflow template targets back to the backend', async () => {
-    const user = userEvent.setup();
     const fetchMock = globalThis.fetch as ReturnType<typeof createFetchMock>;
     renderPage();
     await importSubtitle();
 
-    await user.selectOptions(
-      await screen.findByLabelText(/主翻译 模型/i),
-      'openai-compatible::openai-compatible-default::gpt-4.1-mini',
-    );
-    await user.click(screen.getByRole('button', { name: /保存工作流模板/i }));
+    fireEvent.change(await screen.findByLabelText(/主翻译 模型/i), {
+      target: { value: 'openai-compatible::openai-compatible-default::gpt-4.1-mini' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: /保存工作流模板/i }));
 
     await waitFor(() =>
       expect(fetchMock).toHaveBeenCalledWith(
@@ -444,12 +490,11 @@ describe('SubtitleTranslatorPage workflow mode', () => {
   });
 
   it('executes compare workflow and allows manual candidate override', async () => {
-    const user = userEvent.setup();
     renderPage();
     await importSubtitle();
 
-    await user.selectOptions(await screen.findByLabelText(/工作流模板/i), 'compare');
-    await user.click(screen.getByRole('button', { name: /开始工作流/i }));
+    fireEvent.change(await screen.findByLabelText(/工作流模板/i), { target: { value: 'compare' } });
+    fireEvent.click(screen.getByRole('button', { name: /开始工作流/i }));
 
     expect(await screen.findByText(/推荐结果/i)).toBeInTheDocument();
     expect(screen.getByText(/更自然/i)).toBeInTheDocument();
@@ -458,11 +503,95 @@ describe('SubtitleTranslatorPage workflow mode', () => {
     const secondSelector = screen.getByLabelText(/条目 2 候选选择/i);
     expect(secondSelector).toHaveValue('candidate-b');
 
-    await user.selectOptions(secondSelector, 'candidate-a');
+    fireEvent.change(secondSelector, { target: { value: 'candidate-a' } });
 
     expect(secondSelector).toHaveValue('candidate-a');
     const secondCard = secondSelector.closest('.sub-card');
     expect(secondCard).not.toBeNull();
     expect(within(secondCard as HTMLElement).getByText('世界', { selector: '.sub-text.translated' })).toBeInTheDocument();
+  });
+
+  it('shows a stop control during workflow execution and finalizes the run as cancelled', async () => {
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input);
+
+      if (url === '/api/provider-center' && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(JSON.stringify(providerCenterState), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+
+      if (url === '/api/workflow-templates' && (!init || init.method === undefined)) {
+        return Promise.resolve(
+          new Response(JSON.stringify(workflowTemplates), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+
+      if (url === '/api/translation-runs') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ runId: 'run-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+
+      if (url === '/api/translation-runs/run-1/finalize') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ runId: 'run-1' }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+
+      if (url === '/api/translate/openai-compatible') {
+        return new Promise<Response>((_, reject) => {
+          const signal = init?.signal as AbortSignal | undefined;
+          if (signal?.aborted) {
+            reject(createAbortError());
+            return;
+          }
+          signal?.addEventListener('abort', () => reject(createAbortError()), { once: true });
+        });
+      }
+
+      if (url === '/api/translate/claude-compatible') {
+        return Promise.resolve(
+          new Response(JSON.stringify({ translations: ['您好', '世间'] }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        );
+      }
+
+      return Promise.reject(new Error(`Unexpected fetch: ${url}`));
+    });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    renderPage();
+    await importSubtitle();
+    fireEvent.click(screen.getByRole('button', { name: /开始工作流/i }));
+
+    expect(await screen.findByRole('button', { name: /终止工作流/i })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /终止工作流/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/translation-runs/run-1/finalize',
+        expect.objectContaining({
+          method: 'POST',
+          body: expect.stringContaining('"status":"cancelled"'),
+        }),
+      ),
+    );
   });
 });

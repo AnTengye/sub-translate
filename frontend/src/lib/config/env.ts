@@ -9,6 +9,7 @@ function readProviderId(value: string | undefined): ProviderId {
   switch (value) {
     case 'openai-compatible':
     case 'claude-compatible':
+    case 'google':
     case 'baidu':
       return value;
     default:
@@ -20,6 +21,7 @@ export const appEnv = {
   appTitle: readEnv(import.meta.env.VITE_APP_TITLE, 'SRT Translate'),
   defaultProvider: readProviderId(import.meta.env.VITE_DEFAULT_PROVIDER),
   claudeModel: readEnv(import.meta.env.VITE_CLAUDE_MODEL, 'claude-3-5-sonnet-latest'),
+  googleModel: readEnv(import.meta.env.VITE_GOOGLE_MODEL, 'models/gemini-2.5-flash'),
   openAiModel: readEnv(import.meta.env.VITE_OPENAI_MODEL, 'gpt-4o-mini'),
 };
 
@@ -39,6 +41,13 @@ export function createAppProviderRuntimeSeeds(): ProviderRuntimeSeeds {
         apiEndpoint: '',
         apiKey: '',
         model: appEnv.claudeModel,
+      },
+      google: {
+        profileName: 'Default Google',
+        apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+        apiKey: '',
+        model: appEnv.googleModel,
+        disableThinking: '',
       },
       baidu: {
         profileName: 'Default Baidu',

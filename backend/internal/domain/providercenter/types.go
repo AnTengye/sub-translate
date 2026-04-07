@@ -1,10 +1,11 @@
 package providercenter
 
 type Model struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Enabled bool   `json:"enabled"`
-	Source  string `json:"source"`
+	ID       string `json:"id"`
+	Label    string `json:"label"`
+	Enabled  bool   `json:"enabled"`
+	Source   string `json:"source"`
+	RpmLimit int    `json:"rpmLimit"`
 }
 
 type Health struct {

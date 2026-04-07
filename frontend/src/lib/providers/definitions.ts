@@ -24,6 +24,27 @@ export const providerDefinitions: ProviderDefinition[] = [
     corsNote: '请求地址与 API Key 由服务端环境变量统一提供，前端只配置模型和温度',
   },
   {
+    id: 'google',
+    label: 'Google',
+    icon: 'G',
+    color: '#2d9c5b',
+    desc: '适用于 Google Gemini 原生 generateContent 接口',
+    fields: [
+      { key: 'model', label: '模型名称', type: 'text', placeholder: 'models/gemini-2.5-flash' },
+      {
+        key: 'disableThinking',
+        label: '关闭 Thinking',
+        type: 'checkbox',
+        description: '对支持的 Google 推理模型显式关闭 thinking 模式',
+      },
+    ],
+    defaults: {
+      model: 'models/gemini-2.5-flash',
+      disableThinking: '',
+    } as Record<string, string>,
+    corsNote: '请求地址与 API Key 由服务端统一管理，前端只配置模型与推理开关',
+  },
+  {
     id: 'claude-compatible',
     label: 'Claude Compatible',
     icon: '◆',

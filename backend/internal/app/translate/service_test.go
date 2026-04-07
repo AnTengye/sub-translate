@@ -83,3 +83,56 @@ func TestTranslateUsesSavedProfileAndRequestOverrides(t *testing.T) {
 		t.Fatalf("expected saved endpoint override, got %#v", translator.request.RuntimeOverrides["apiEndpoint"])
 	}
 }
+
+func TestTranslateUsesGoogleProfileAndTranslator(t *testing.T) {
+	t.Parallel()
+
+	translator := &fakeTranslator{
+		result: apptranslate.Result{Translations: []string{"你好"}},
+	}
+	service := apptranslate.NewService(apptranslate.Dependencies{
+		ProviderCenterReader: fakeProviderCenterReader{
+			state: domainprovider.State{
+				Families: map[string]domainprovider.Family{
+					"google": {
+						ID:              "google",
+						ActiveProfileID: "google-profile",
+						Profiles: []domainprovider.Profile{
+							{
+								ID:     "google-profile",
+								Family: "google",
+								Connection: map[string]string{
+									"apiEndpoint": "https://generativelanguage.googleapis.com/v1beta",
+									"apiKey":      "google-key",
+								},
+								Settings: map[string]string{
+									"model":           "models/gemini-2.5-flash",
+									"disableThinking": "true",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+		GoogleTranslator: translator,
+	})
+
+	_, err := service.Translate(context.Background(), "google", apptranslate.TranslateInput{
+		ProfileID: "google-profile",
+		Texts:     []string{"こんにちは"},
+	})
+	if err != nil {
+		t.Fatalf("Translate() error = %v", err)
+	}
+
+	if translator.request.Options["model"] != "models/gemini-2.5-flash" {
+		t.Fatalf("expected google model to be merged, got %#v", translator.request.Options["model"])
+	}
+	if translator.request.Options["disableThinking"] != "true" {
+		t.Fatalf("expected google disableThinking to be merged, got %#v", translator.request.Options["disableThinking"])
+	}
+	if translator.request.RuntimeOverrides["apiKey"] != "google-key" {
+		t.Fatalf("expected google api key override, got %#v", translator.request.RuntimeOverrides["apiKey"])
+	}
+}

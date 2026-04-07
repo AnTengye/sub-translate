@@ -15,6 +15,13 @@ export interface ClaudeProfileConfig {
   model: string;
 }
 
+export interface GoogleProfileConfig {
+  apiEndpoint: string;
+  apiKey: string;
+  model: string;
+  disableThinking: string;
+}
+
 export interface BaiduProfileConfig {
   apiEndpoint: string;
   appId: string;
@@ -28,6 +35,7 @@ export interface BaiduProfileConfig {
 export interface ProviderProfileConfigMap {
   'openai-compatible': OpenAiProfileConfig;
   'claude-compatible': ClaudeProfileConfig;
+  google: GoogleProfileConfig;
   baidu: BaiduProfileConfig;
 }
 
@@ -48,6 +56,7 @@ export interface ProviderProfileStorageData {
   providers: {
     'openai-compatible': ProviderProfileGroup<'openai-compatible'>;
     'claude-compatible': ProviderProfileGroup<'claude-compatible'>;
+    google: ProviderProfileGroup<'google'>;
     baidu: ProviderProfileGroup<'baidu'>;
   };
 }
@@ -57,6 +66,7 @@ export interface ProviderRuntimeSeeds {
   providers: {
     'openai-compatible': OpenAiProfileConfig & { profileName: string };
     'claude-compatible': ClaudeProfileConfig & { profileName: string };
+    google: GoogleProfileConfig & { profileName: string };
     baidu: BaiduProfileConfig & { profileName: string };
   };
 }
@@ -129,10 +139,12 @@ function isProviderProfileStorageData(value: unknown): value is ProviderProfileS
     value.version === 1 &&
     (value.defaultProvider === 'openai-compatible' ||
       value.defaultProvider === 'claude-compatible' ||
+      value.defaultProvider === 'google' ||
       value.defaultProvider === 'baidu') &&
     isObject(value.providers) &&
     isProfileGroup(value.providers['openai-compatible']) &&
     isProfileGroup(value.providers['claude-compatible']) &&
+    isProfileGroup(value.providers.google) &&
     isProfileGroup(value.providers.baidu)
   );
 }
@@ -169,6 +181,21 @@ export function createDefaultProviderProfiles(
               apiEndpoint: seeds.providers['claude-compatible'].apiEndpoint,
               apiKey: seeds.providers['claude-compatible'].apiKey,
               model: seeds.providers['claude-compatible'].model,
+            },
+          },
+        ],
+      },
+      google: {
+        activeProfileId: 'google-default',
+        profiles: [
+          {
+            id: 'google-default',
+            name: seeds.providers.google.profileName,
+            config: {
+              apiEndpoint: seeds.providers.google.apiEndpoint,
+              apiKey: seeds.providers.google.apiKey,
+              model: seeds.providers.google.model,
+              disableThinking: seeds.providers.google.disableThinking,
             },
           },
         ],

@@ -28,6 +28,18 @@ const advancedFieldMap: Record<ProviderId, ProviderFieldDefinition[]> = {
     { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'sk-ant-...' },
     { key: 'model', label: '模型名称', type: 'text', placeholder: 'claude-3-5-sonnet-latest' },
   ],
+  google: [
+    { key: 'name', label: '配置名称', type: 'text', placeholder: '例如：Google Gemini' },
+    {
+      key: 'apiEndpoint',
+      label: 'API 端点',
+      type: 'text',
+      placeholder: 'https://generativelanguage.googleapis.com/v1beta',
+    },
+    { key: 'apiKey', label: 'API Key', type: 'password', placeholder: 'AIza...' },
+    { key: 'model', label: '模型名称', type: 'text', placeholder: 'models/gemini-2.5-flash' },
+    { key: 'disableThinking', label: '关闭 Thinking', type: 'checkbox' },
+  ],
   baidu: [
     { key: 'name', label: '配置名称', type: 'text', placeholder: '例如：百度默认' },
     {

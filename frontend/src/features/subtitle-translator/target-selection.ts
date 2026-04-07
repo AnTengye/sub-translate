@@ -264,6 +264,14 @@ export function buildProviderRequestConfig(
     runtimeOverrides.apiEndpoint = profile.connection.apiEndpoint || undefined;
     runtimeOverrides.apiKey = profile.connection.apiKey || undefined;
     runtimeOverrides.providerLabel = profile.settings.providerLabel || undefined;
+  } else if (target.family === 'google') {
+    config.model = target.modelId;
+    config.temperature = String(temperature);
+    if (profile.settings.disableThinking) {
+      config.disableThinking = profile.settings.disableThinking;
+    }
+    runtimeOverrides.apiEndpoint = profile.connection.apiEndpoint || undefined;
+    runtimeOverrides.apiKey = profile.connection.apiKey || undefined;
   } else {
     config.modelType = target.modelId;
     ['reference', 'punctuationPreprocessing'].forEach((key) => {

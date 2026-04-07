@@ -41,6 +41,105 @@ func TestReadSeedsDefaultProviderCenterState(t *testing.T) {
 	if family.Profiles[0].Connection["apiEndpoint"] != "https://api.example.com/v1" {
 		t.Fatalf("expected env endpoint to seed profile, got %q", family.Profiles[0].Connection["apiEndpoint"])
 	}
+
+	googleFamily, ok := state.Families["google"]
+	if !ok {
+		t.Fatalf("expected google family to exist")
+	}
+
+	if got := googleFamily.Profiles[0].Connection["apiEndpoint"]; got == "" {
+		t.Fatalf("expected google endpoint to be seeded, got %q", got)
+	}
+}
+
+func TestReadMigratesLegacyGoogleOpenAICompatibleProfile(t *testing.T) {
+	t.Parallel()
+
+	repository := &stubRepository{
+		state: domainprovider.State{
+			Version:         1,
+			DefaultProvider: "openai-compatible",
+			Families: map[string]domainprovider.Family{
+				"openai-compatible": {
+					ID:              "openai-compatible",
+					Label:           "OpenAI Compatible",
+					Description:     "desc",
+					ActiveProfileID: "google-profile",
+					Profiles: []domainprovider.Profile{
+						{
+							ID:        "google-profile",
+							Family:    "openai-compatible",
+							Name:      "google",
+							Enabled:   true,
+							IsDefault: true,
+							Connection: map[string]string{
+								"apiEndpoint": "https://generativelanguage.googleapis.com/v1beta/openai",
+								"apiKey":      "google-key",
+							},
+							Settings: map[string]string{
+								"model":           "models/gemma-4-26b-a4b-it",
+								"disableThinking": "true",
+							},
+							Capabilities: map[string]bool{
+								"supportsModelDiscovery":        true,
+								"supportsConnectionCheck":       true,
+								"supportsManualModelManagement": true,
+								"supportsThinkingToggle":        true,
+							},
+							Models: []domainprovider.Model{
+								{ID: "models/gemma-4-26b-a4b-it", Label: "models/gemma-4-26b-a4b-it", Enabled: true, Source: "auto"},
+							},
+							ModelDiscovery: domainprovider.ModelDiscovery{
+								SourceMode:             "auto",
+								SupportsModelDiscovery: true,
+								LastStatus:             "idle",
+							},
+							Health: domainprovider.Health{
+								Status:  "success",
+								Summary: "ok",
+							},
+						},
+					},
+				},
+				"claude-compatible": {
+					ID: "claude-compatible",
+				},
+				"baidu": {
+					ID: "baidu",
+				},
+			},
+		},
+	}
+	service := providercenter.NewService(providercenter.Dependencies{
+		DefaultProvider: "openai-compatible",
+		Repository:      repository,
+	})
+
+	state, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+
+	if _, ok := state.Families["google"]; !ok {
+		t.Fatalf("expected migrated google family to exist")
+	}
+
+	if got := state.DefaultProvider; got != "google" {
+		t.Fatalf("expected default provider to migrate to google, got %q", got)
+	}
+
+	openAIFamily := state.Families["openai-compatible"]
+	if len(openAIFamily.Profiles) != 0 {
+		t.Fatalf("expected legacy google profile to be removed from openai-compatible, got %#v", openAIFamily.Profiles)
+	}
+
+	googleProfile := state.Families["google"].Profiles[0]
+	if googleProfile.Family != "google" {
+		t.Fatalf("expected migrated profile family google, got %q", googleProfile.Family)
+	}
+	if got := googleProfile.Connection["apiEndpoint"]; got != "https://generativelanguage.googleapis.com/v1beta" {
+		t.Fatalf("expected apiEndpoint to migrate to native google base, got %q", got)
+	}
 }
 
 type stubRepository struct {

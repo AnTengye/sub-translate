@@ -20,7 +20,7 @@ export interface ProviderDefinition {
   corsNote?: string;
 }
 
-export type ProviderId = 'openai-compatible' | 'claude-compatible' | 'baidu';
+export type ProviderId = 'openai-compatible' | 'claude-compatible' | 'google' | 'baidu';
 
 export interface TranslationBatchMetadata {
   kind: 'translate' | 'retry';

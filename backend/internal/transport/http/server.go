@@ -387,7 +387,7 @@ func NewServer(deps Dependencies) http.Handler {
 
 func isSupportedProvider(provider string) bool {
 	switch provider {
-	case "openai-compatible", "claude-compatible", "baidu":
+	case "openai-compatible", "claude-compatible", "google", "baidu":
 		return true
 	default:
 		return false

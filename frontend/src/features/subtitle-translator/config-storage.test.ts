@@ -23,6 +23,13 @@ const providerSeeds: ProviderRuntimeSeeds = {
       apiKey: 'claude-key',
       model: 'claude-sonnet',
     },
+    google: {
+      profileName: 'Google Local',
+      apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+      apiKey: 'google-key',
+      model: 'models/gemini-2.5-flash',
+      disableThinking: '',
+    },
     baidu: {
       profileName: 'Baidu Local',
       apiEndpoint: 'https://fanyi-api.baidu.com/ait/api/aiTextTranslate',
@@ -57,6 +64,7 @@ describe('config-storage', () => {
       },
     ]);
     expect(data.providers['claude-compatible'].profiles[0]?.config.apiKey).toBe('claude-key');
+    expect(data.providers.google.profiles[0]?.config.model).toBe('models/gemini-2.5-flash');
     expect(data.providers.baidu.profiles[0]?.config.appId).toBe('appid-1');
   });
 
@@ -90,6 +98,21 @@ describe('config-storage', () => {
                 apiEndpoint: 'https://claude.example.com/v1',
                 apiKey: 'persisted-claude-key',
                 model: 'claude-3-7-sonnet',
+              },
+            },
+          ],
+        },
+        google: {
+          activeProfileId: 'google-alt',
+          profiles: [
+            {
+              id: 'google-alt',
+              name: 'Backup Google',
+              config: {
+                apiEndpoint: 'https://generativelanguage.googleapis.com/v1beta',
+                apiKey: 'persisted-google-key',
+                model: 'models/gemma-4-26b-a4b-it',
+                disableThinking: 'true',
               },
             },
           ],

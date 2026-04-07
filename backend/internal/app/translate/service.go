@@ -53,20 +53,28 @@ type ProviderCenterReader interface {
 	Read(context.Context) (domainprovider.State, error)
 }
 
+type RpmWaiter interface {
+	Wait(ctx context.Context, key string, limit int) error
+}
+
 type Dependencies struct {
 	ProviderCenterReader       ProviderCenterReader
 	OpenAICompatibleTranslator Translator
 	ClaudeCompatibleTranslator Translator
+	GoogleTranslator           Translator
 	BaiduTranslator            Translator
 	MaxConcurrency             int
+	RpmLimiter                 RpmWaiter
 }
 
 type Service struct {
 	providerCenterReader       ProviderCenterReader
 	openAICompatibleTranslator Translator
 	claudeCompatibleTranslator Translator
+	googleTranslator           Translator
 	baiduTranslator            Translator
 	semaphore                  chan struct{}
+	rpmLimiter                 RpmWaiter
 }
 
 func NewService(deps Dependencies) *Service {
@@ -74,7 +82,9 @@ func NewService(deps Dependencies) *Service {
 		providerCenterReader:       deps.ProviderCenterReader,
 		openAICompatibleTranslator: deps.OpenAICompatibleTranslator,
 		claudeCompatibleTranslator: deps.ClaudeCompatibleTranslator,
+		googleTranslator:           deps.GoogleTranslator,
 		baiduTranslator:            deps.BaiduTranslator,
+		rpmLimiter:                 deps.RpmLimiter,
 	}
 	if deps.MaxConcurrency > 0 {
 		service.semaphore = make(chan struct{}, deps.MaxConcurrency)
@@ -109,12 +119,46 @@ func (s *Service) Translate(ctx context.Context, provider string, input Translat
 
 	mergeProfileIntoRequest(profile, &request)
 
+	if err := s.waitForRpm(ctx, profile, &request); err != nil {
+		return Result{}, err
+	}
+
 	translator, err := s.resolveTranslator(provider)
 	if err != nil {
 		return Result{}, err
 	}
 
 	return translator.Translate(ctx, request)
+}
+
+func (s *Service) waitForRpm(ctx context.Context, profile *domainprovider.Profile, request *Request) error {
+	if s.rpmLimiter == nil || profile == nil {
+		return nil
+	}
+
+	modelID := stringVal(request.Options["model"])
+	if modelID == "" {
+		modelID = stringVal(request.Options["modelType"])
+	}
+	if modelID == "" {
+		return nil
+	}
+
+	for _, model := range profile.Models {
+		if model.ID == modelID && model.RpmLimit > 0 {
+			key := profile.ID + ":" + model.ID
+			return s.rpmLimiter.Wait(ctx, key, model.RpmLimit)
+		}
+	}
+
+	return nil
+}
+
+func stringVal(v any) string {
+	if s, ok := v.(string); ok {
+		return s
+	}
+	return ""
 }
 
 func (s *Service) acquire(ctx context.Context) (func(), error) {
@@ -142,6 +186,11 @@ func (s *Service) resolveTranslator(provider string) (Translator, error) {
 			return nil, errors.New("不支持的翻译引擎")
 		}
 		return s.claudeCompatibleTranslator, nil
+	case "google":
+		if s.googleTranslator == nil {
+			return nil, errors.New("不支持的翻译引擎")
+		}
+		return s.googleTranslator, nil
 	case "baidu":
 		if s.baiduTranslator == nil {
 			return nil, errors.New("不支持的翻译引擎")
@@ -211,6 +260,14 @@ func mergeProfileIntoRequest(profile *domainprovider.Profile, request *Request) 
 		if providerLabel := profile.Settings["providerLabel"]; providerLabel != "" {
 			if _, exists := request.RuntimeOverrides["providerLabel"]; !exists {
 				request.RuntimeOverrides["providerLabel"] = providerLabel
+			}
+		}
+	case "google":
+		for _, key := range []string{"apiEndpoint", "apiKey"} {
+			if value := profile.Connection[key]; value != "" {
+				if _, exists := request.RuntimeOverrides[key]; !exists {
+					request.RuntimeOverrides[key] = value
+				}
 			}
 		}
 	case "baidu":

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useReducer, useState } from 'react';
+import { useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { useToast } from '../../components/ui/feedback/useToast';
 import { createTranslationRun, executeWorkflowNode, finalizeTranslationRun } from '../../lib/providers/registry';
 import { serializeSrt } from '../../lib/subtitle/srt';
@@ -71,6 +71,10 @@ function findFirstRunnableTarget(template: WorkflowTemplate | null): ProviderTar
   return null;
 }
 
+function isCancellationError(error: unknown) {
+  return error instanceof Error && (error.name === 'AbortError' || error.message === 'cancelled');
+}
+
 export default function SubtitleTranslatorPage() {
   const [state, dispatch] = useReducer(subtitleTranslatorReducer, undefined, createInitialState);
   const [busy, setBusy] = useState(false);
@@ -79,8 +83,14 @@ export default function SubtitleTranslatorPage() {
   const [selectedTrackByEntry, setSelectedTrackByEntry] = useState<string[]>([]);
   const [fallbackTexts, setFallbackTexts] = useState<string[]>([]);
   const [isProviderCenterOpen, setIsProviderCenterOpen] = useState(false);
+  const workflowAbortRef = useRef<AbortController | null>(null);
+  const displayRef = useRef(state.display);
   const toast = useToast();
   const { importFile } = useFileImport(dispatch);
+
+  useEffect(() => {
+    displayRef.current = state.display;
+  }, [state.display]);
 
   useEffect(() => {
     let active = true;
@@ -173,6 +183,7 @@ export default function SubtitleTranslatorPage() {
     });
 
     const controller = new AbortController();
+    workflowAbortRef.current = controller;
     let runId: string | null = null;
     const workflowStartTime = Date.now();
 
@@ -200,6 +211,8 @@ export default function SubtitleTranslatorPage() {
       const result = await executeWorkflowTemplate(state.entries, state.workflowDraft, {
         batchSize: state.translationConfig.batchSize,
         contextLines: state.translationConfig.contextLines,
+        delayMs: 150,
+        signal: controller.signal,
         onLog: (message) =>
           dispatch({
             type: 'appendLog',
@@ -291,6 +304,31 @@ export default function SubtitleTranslatorPage() {
         controller.signal,
       );
     } catch (error) {
+      if (isCancellationError(error)) {
+        dispatch({
+          type: 'appendLog',
+          log: {
+            t: new Date().toLocaleTimeString('zh-CN', { hour12: false }),
+            msg: '⚠️ 工作流已终止',
+          },
+        });
+        dispatch({ type: 'setError', error: null });
+        dispatch({
+          type: 'setStep',
+          step: displayRef.current.some((entry) => entry.status === 'done') ? 'done' : 'config',
+        });
+        if (runId) {
+          await finalizeTranslationRun(
+            runId,
+            {
+              status: 'cancelled',
+            },
+            new AbortController().signal,
+          ).catch(() => undefined);
+        }
+        return;
+      }
+
       const errorMsg = error instanceof Error ? error.message : '工作流执行失败';
       dispatch({
         type: 'appendLog',
@@ -314,6 +352,7 @@ export default function SubtitleTranslatorPage() {
         ).catch(() => undefined);
       }
     } finally {
+      workflowAbortRef.current = null;
       setBusy(false);
     }
   }
@@ -413,6 +452,7 @@ export default function SubtitleTranslatorPage() {
           onNodeTargetChange={handleNodeTargetChange}
           onSave={handleSaveWorkflowTemplate}
           onStart={handleStartWorkflow}
+          onCancel={() => workflowAbortRef.current?.abort()}
         />
 
         <section className="content workflow-content">

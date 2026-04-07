@@ -3,6 +3,8 @@ package providercenter
 import (
 	"context"
 	"errors"
+	"reflect"
+	"strings"
 
 	"gorm.io/gorm"
 	domain "srt-translate/internal/domain/providercenter"
@@ -71,7 +73,13 @@ func (s *Service) Read(ctx context.Context) (domain.State, error) {
 
 	state, err := s.repository.Read(ctx)
 	if err == nil {
-		return state, nil
+		normalized := normalizeState(state, s.defaultProvider, s.env)
+		if !reflect.DeepEqual(normalized, state) {
+			if saveErr := s.repository.Save(ctx, normalized); saveErr != nil {
+				return domain.State{}, saveErr
+			}
+		}
+		return normalized, nil
 	}
 
 	if !errors.Is(err, gorm.ErrRecordNotFound) {
@@ -240,6 +248,46 @@ func seedState(defaultProvider string, env map[string]string) domain.State {
 		Version:         1,
 		DefaultProvider: defaultProvider,
 		Families: map[string]domain.Family{
+			"google": {
+				ID:              "google",
+				Label:           "Google",
+				Description:     "适用于 Google Gemini 原生 generateContent 接口。",
+				ActiveProfileID: "google-default",
+				Profiles: []domain.Profile{
+					{
+						ID:        "google-default",
+						Family:    "google",
+						Name:      "Default Google",
+						Enabled:   true,
+						IsDefault: defaultProvider == "google",
+						Connection: map[string]string{
+							"apiEndpoint": fallback(env["GOOGLE_API_ENDPOINT"], "https://generativelanguage.googleapis.com/v1beta"),
+							"apiKey":      env["GOOGLE_API_KEY"],
+						},
+						Settings: map[string]string{
+							"model":           fallback(env["VITE_GOOGLE_MODEL"], "models/gemini-2.5-flash"),
+							"disableThinking": "",
+							"providerLabel":   "Google",
+						},
+						Capabilities: map[string]bool{
+							"supportsModelDiscovery":        true,
+							"supportsConnectionCheck":       true,
+							"supportsManualModelManagement": true,
+							"supportsThinkingToggle":        true,
+						},
+						Models: []domain.Model{},
+						ModelDiscovery: domain.ModelDiscovery{
+							SourceMode:             "auto",
+							SupportsModelDiscovery: true,
+							LastStatus:             "idle",
+						},
+						Health: domain.Health{
+							Status:  "idle",
+							Summary: "未检查",
+						},
+					},
+				},
+			},
 			"openai-compatible": {
 				ID:              "openai-compatible",
 				Label:           "OpenAI Compatible",
@@ -361,6 +409,135 @@ func seedState(defaultProvider string, env map[string]string) domain.State {
 			},
 		},
 	}
+}
+
+func normalizeState(state domain.State, defaultProvider string, env map[string]string) domain.State {
+	seeded := seedState(defaultProvider, env)
+	if state.Version == 0 {
+		state.Version = 1
+	}
+	if state.Families == nil {
+		state.Families = map[string]domain.Family{}
+	}
+	if state.DefaultProvider == "" {
+		state.DefaultProvider = defaultProvider
+	}
+
+	for familyID, seededFamily := range seeded.Families {
+		if family, ok := state.Families[familyID]; ok {
+			if family.ID == "" {
+				family.ID = seededFamily.ID
+			}
+			if family.Label == "" {
+				family.Label = seededFamily.Label
+			}
+			if family.Description == "" {
+				family.Description = seededFamily.Description
+			}
+			if family.ActiveProfileID == "" && len(family.Profiles) > 0 {
+				family.ActiveProfileID = family.Profiles[0].ID
+			}
+			state.Families[familyID] = family
+			continue
+		}
+		state.Families[familyID] = seededFamily
+	}
+
+	return migrateLegacyGoogleProfiles(state)
+}
+
+func migrateLegacyGoogleProfiles(state domain.State) domain.State {
+	openAIFamily, ok := state.Families["openai-compatible"]
+	if !ok {
+		return state
+	}
+
+	googleFamily := state.Families["google"]
+	remainingProfiles := make([]domain.Profile, 0, len(openAIFamily.Profiles))
+	migratedProfiles := make([]domain.Profile, 0, len(openAIFamily.Profiles))
+	migratedActive := false
+	for _, profile := range openAIFamily.Profiles {
+		if !isLegacyGoogleProfile(profile) {
+			remainingProfiles = append(remainingProfiles, profile)
+			continue
+		}
+
+		migrated := profile
+		migrated.Family = "google"
+		migrated.Connection = cloneStringMap(profile.Connection)
+		migrated.Settings = cloneStringMap(profile.Settings)
+		migrated.Capabilities = cloneBoolMap(profile.Capabilities)
+		migrated.Connection["apiEndpoint"] = normalizeLegacyGoogleEndpoint(profile.Connection["apiEndpoint"])
+		migrated.Settings["providerLabel"] = "Google"
+		migrated.Capabilities["supportsModelDiscovery"] = true
+		migrated.Capabilities["supportsConnectionCheck"] = true
+		migrated.Capabilities["supportsManualModelManagement"] = true
+		migrated.Capabilities["supportsThinkingToggle"] = true
+		if profile.ID == openAIFamily.ActiveProfileID {
+			migratedActive = true
+		}
+		migratedProfiles = append(migratedProfiles, migrated)
+	}
+
+	if len(migratedProfiles) == 0 {
+		return state
+	}
+
+	openAIFamily.Profiles = remainingProfiles
+	if migratedActive {
+		openAIFamily.ActiveProfileID = firstProfileID(remainingProfiles)
+	}
+	state.Families["openai-compatible"] = openAIFamily
+
+	googleFamily.Profiles = append(googleFamily.Profiles, migratedProfiles...)
+	if migratedActive || googleFamily.ActiveProfileID == "" {
+		googleFamily.ActiveProfileID = migratedProfiles[0].ID
+	}
+	state.Families["google"] = googleFamily
+
+	if state.DefaultProvider == "openai-compatible" && migratedActive {
+		state.DefaultProvider = "google"
+	}
+
+	return state
+}
+
+func isLegacyGoogleProfile(profile domain.Profile) bool {
+	return strings.Contains(strings.TrimSpace(profile.Connection["apiEndpoint"]), "generativelanguage.googleapis.com")
+}
+
+func normalizeLegacyGoogleEndpoint(endpoint string) string {
+	trimmed := strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	return strings.TrimSuffix(trimmed, "/openai")
+}
+
+func firstProfileID(profiles []domain.Profile) string {
+	if len(profiles) == 0 {
+		return ""
+	}
+	return profiles[0].ID
+}
+
+func cloneStringMap(input map[string]string) map[string]string {
+	if input == nil {
+		return map[string]string{}
+	}
+	cloned := make(map[string]string, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
+}
+
+func cloneBoolMap(input map[string]bool) map[string]bool {
+	if input == nil {
+		return map[string]bool{}
+	}
+	cloned := make(map[string]bool, len(input))
+	for key, value := range input {
+		cloned[key] = value
+	}
+	return cloned
 }
 
 func fallback(value string, fallbackValue string) string {

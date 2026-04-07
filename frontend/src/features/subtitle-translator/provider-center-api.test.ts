@@ -11,6 +11,13 @@ describe('provider-center api normalization', () => {
             version: 1,
             defaultProvider: 'openai-compatible',
             families: {
+              google: {
+                id: 'google',
+                label: 'Google',
+                description: '',
+                activeProfileId: 'google-default',
+                profiles: [],
+              },
               'openai-compatible': {
                 id: 'openai-compatible',
                 label: 'OpenAI Compatible',
@@ -85,5 +92,6 @@ describe('provider-center api normalization', () => {
 
     expect(state.families['openai-compatible'].profiles[0].models).toEqual([]);
     expect(state.families['openai-compatible'].profiles[0].availableModels).toEqual([]);
+    expect(state.families.google.profiles).toEqual([]);
   });
 });

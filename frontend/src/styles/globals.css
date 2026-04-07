@@ -804,7 +804,7 @@ select:focus-visible {
   font-family: var(--font-mono);
   font-size: 12px;
   line-height: 1.6;
-  max-height: min(42vh, 360px);
+  max-height: 120px;
   overflow-y: auto;
   color: var(--text-2);
   border-bottom-left-radius: calc(var(--radius-lg) - 1px);
@@ -1630,6 +1630,30 @@ select:focus-visible {
   border-radius: 12px;
   padding: 10px 12px;
   background: var(--bg-2);
+}
+
+.provider-center-model-rpm {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-2);
+}
+
+.provider-center-model-rpm input {
+  width: 64px;
+  padding: 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-size: 12px;
+  text-align: right;
+}
+
+.provider-center-model-rpm input::placeholder {
+  color: var(--text-3);
 }
 
 .provider-center-model-status {

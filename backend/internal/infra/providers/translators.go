@@ -29,6 +29,12 @@ type ClaudeCompatibleTranslator struct {
 	DefaultAPIKey   string
 }
 
+type GoogleTranslator struct {
+	Client          *http.Client
+	DefaultEndpoint string
+	DefaultAPIKey   string
+}
+
 type BaiduTranslator struct {
 	Client           *http.Client
 	DefaultEndpoint  string
@@ -205,6 +211,88 @@ func (t ClaudeCompatibleTranslator) Translate(ctx context.Context, request apptr
 	}, nil
 }
 
+func (t GoogleTranslator) Translate(ctx context.Context, request apptranslate.Request) (apptranslate.Result, error) {
+	endpoint := strings.TrimRight(firstNonEmpty(stringValue(request.RuntimeOverrides["apiEndpoint"]), t.DefaultEndpoint), "/")
+	if endpoint == "" {
+		endpoint = "https://generativelanguage.googleapis.com/v1beta"
+	}
+	apiKey := firstNonEmpty(stringValue(request.RuntimeOverrides["apiKey"]), t.DefaultAPIKey)
+	if apiKey == "" {
+		return apptranslate.Result{}, errors.New("服务端未配置 GOOGLE_API_KEY")
+	}
+
+	system, user, err := buildOperationMessages(request)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+	model := firstNonEmpty(stringValue(request.Options["model"]), "models/gemini-2.5-flash")
+	payload := map[string]any{
+		"systemInstruction": map[string]any{
+			"parts": []map[string]string{
+				{"text": system},
+			},
+		},
+		"contents": []map[string]any{
+			{
+				"role": "user",
+				"parts": []map[string]string{
+					{"text": user},
+				},
+			},
+		},
+		"generationConfig": map[string]any{
+			"temperature":     floatValue(request.Options["temperature"], 0.3),
+			"maxOutputTokens": intValue(request.Options["maxTokens"], 4096),
+		},
+	}
+	if stringValue(request.Options["disableThinking"]) == "true" && supportsGoogleThinkingConfig(model) {
+		generationConfig := payload["generationConfig"].(map[string]any)
+		generationConfig["thinkingConfig"] = map[string]any{"thinkingBudget": 0}
+	}
+
+	url := endpoint + "/" + strings.TrimPrefix(model, "/") + ":generateContent?key=" + apiKey
+	resp, rawBody, err := doJSONRequest(ctx, httpClient(t.Client), http.MethodPost, url, map[string]string{
+		"Content-Type": "application/json",
+	}, payload)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+
+	rawText, errorMessage, err := extractGoogleResponseText(rawBody)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if errorMessage == "" {
+			errorMessage = resp.Status
+		}
+		return apptranslate.Result{}, errors.New("Google API " + strconv.Itoa(resp.StatusCode) + ": " + errorMessage)
+	}
+
+	translations, metadata, err := parseOperationResponse(request, rawText)
+	if err != nil {
+		return apptranslate.Result{}, err
+	}
+
+	return apptranslate.Result{
+		Translations: translations,
+		Debug: map[string]any{
+			"request": map[string]any{
+				"endpoint": endpoint + "/" + strings.TrimPrefix(model, "/") + ":generateContent?key=[REDACTED]",
+				"headers": map[string]any{
+					"Content-Type": "application/json",
+				},
+				"payload": payload,
+			},
+			"response": map[string]any{
+				"status":  resp.StatusCode,
+				"rawText": rawText,
+			},
+		},
+		Metadata: metadata,
+	}, nil
+}
+
 func (t BaiduTranslator) Translate(ctx context.Context, request apptranslate.Request) (apptranslate.Result, error) {
 	endpoint := firstNonEmpty(stringValue(request.RuntimeOverrides["apiEndpoint"]), t.DefaultEndpoint)
 	appID := firstNonEmpty(stringValue(request.RuntimeOverrides["appId"]), t.DefaultAppID)
@@ -309,8 +397,11 @@ func (t BaiduTranslator) Translate(ctx context.Context, request apptranslate.Req
 	}, nil
 }
 
-func buildTranslationMessages(texts []string, contextTexts []string) (string, string) {
+func buildTranslationMessages(texts []string, contextTexts []string, prompt string) (string, string) {
 	system := "你是专业的日语字幕翻译员，将日语字幕精准翻译成简体中文。\n规则：保持自然流畅的中文表达；字幕简洁不冗长；人名、专有名词前后一致。\n必须严格返回JSON数组格式，如：[\"翻译1\",\"翻译2\"]，不含任何说明或代码块。"
+	if prompt != "" {
+		system += "\n补充要求：" + prompt
+	}
 
 	contextBlock := ""
 	if len(contextTexts) > 0 {
@@ -380,7 +471,7 @@ func buildJudgeMessages(texts []string, candidates []apptranslate.JudgeCandidate
 func buildOperationMessages(request apptranslate.Request) (string, string, error) {
 	switch request.Operation {
 	case "", "translate":
-		system, user := buildTranslationMessages(request.Texts, request.ContextTexts)
+		system, user := buildTranslationMessages(request.Texts, request.ContextTexts, stringValue(request.Options["prompt"]))
 		return system, user, nil
 	case "review":
 		system, user := buildReviewMessages(request.Texts, request.DraftTexts, request.ContextTexts, stringValue(request.Options["prompt"]))
@@ -416,7 +507,43 @@ func buildThinkingOverride(model string, disableThinking string) map[string]any 
 	if strings.Contains(normalized, "qwen") || strings.Contains(normalized, "qwq") || strings.Contains(normalized, "kimi") || strings.Contains(normalized, "moonshot") {
 		return map[string]any{"enable_thinking": false}
 	}
+	if strings.Contains(normalized, "gemma") {
+		return map[string]any{"thinking_budget": 0}
+	}
 	return map[string]any{}
+}
+
+func supportsGoogleThinkingConfig(model string) bool {
+	normalized := strings.ToLower(strings.TrimSpace(model))
+	return strings.Contains(normalized, "gemini-2.5") || strings.Contains(normalized, "gemini-3")
+}
+
+func extractGoogleResponseText(rawBody []byte) (string, string, error) {
+	var payload struct {
+		Candidates []struct {
+			Content struct {
+				Parts []struct {
+					Text string `json:"text"`
+				} `json:"parts"`
+			} `json:"content"`
+		} `json:"candidates"`
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(rawBody, &payload); err != nil {
+		return "", "", err
+	}
+
+	for _, candidate := range payload.Candidates {
+		for _, part := range candidate.Content.Parts {
+			if strings.TrimSpace(part.Text) != "" {
+				return part.Text, payload.Error.Message, nil
+			}
+		}
+	}
+
+	return "[]", payload.Error.Message, nil
 }
 
 func httpClient(client *http.Client) *http.Client {
@@ -436,7 +563,9 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 	var lastRawBody []byte
 	var lastErr error
 
-	for attempt := 0; attempt < 3; attempt++ {
+	const maxAttempts = 5
+
+	for attempt := 0; attempt < maxAttempts; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))
 		if err != nil {
 			return nil, nil, err
@@ -448,7 +577,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 		resp, err := client.Do(req)
 		if err != nil {
 			lastErr = err
-			if attempt < 2 && isRetryableError(err) {
+			if attempt < maxAttempts-1 && isRetryableError(err) {
 				select {
 				case <-ctx.Done():
 					return nil, nil, ctx.Err()
@@ -463,7 +592,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 		resp.Body.Close()
 		if err != nil {
 			lastErr = err
-			if attempt < 2 && isRetryableError(err) {
+			if attempt < maxAttempts-1 && isRetryableError(err) {
 				select {
 				case <-ctx.Done():
 					return nil, nil, ctx.Err()
@@ -474,11 +603,24 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 			return nil, nil, err
 		}
 
+		if resp.StatusCode == 429 && attempt < maxAttempts-1 {
+			lastErr = errors.New("HTTP 429: rate limit")
+			lastResp = resp
+			lastRawBody = rawBody
+			delay := parseRetryAfter(resp.Header.Get("Retry-After"), time.Duration(10*(attempt+1))*time.Second)
+			select {
+			case <-ctx.Done():
+				return nil, nil, ctx.Err()
+			case <-time.After(delay):
+				continue
+			}
+		}
+
 		if resp.StatusCode >= 500 {
 			lastErr = errors.New("HTTP " + strconv.Itoa(resp.StatusCode))
 			lastResp = resp
 			lastRawBody = rawBody
-			if attempt < 2 {
+			if attempt < maxAttempts-1 {
 				select {
 				case <-ctx.Done():
 					return nil, nil, ctx.Err()
@@ -496,6 +638,20 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 		return lastResp, lastRawBody, nil
 	}
 	return nil, nil, lastErr
+}
+
+func parseRetryAfter(header string, fallback time.Duration) time.Duration {
+	if header == "" {
+		return fallback
+	}
+	if seconds, err := strconv.ParseFloat(header, 64); err == nil && seconds > 0 {
+		delay := time.Duration(seconds * float64(time.Second))
+		if delay > 2*time.Minute {
+			return 2 * time.Minute
+		}
+		return delay
+	}
+	return fallback
 }
 
 func isRetryableError(err error) bool {

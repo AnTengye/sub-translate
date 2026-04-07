@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -16,7 +17,7 @@ import (
 type HealthChecker struct{}
 
 func (HealthChecker) Check(_ context.Context, profile domainprovider.Profile) (appprovidercenter.HealthCheckResult, error) {
-	if profile.Family == "openai-compatible" || profile.Family == "claude-compatible" {
+	if profile.Family == "openai-compatible" || profile.Family == "claude-compatible" || profile.Family == "google" {
 		if profile.Connection["apiEndpoint"] == "" || profile.Connection["apiKey"] == "" {
 			return appprovidercenter.HealthCheckResult{
 				Status:  "warning",
@@ -63,7 +64,7 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		}, nil
 	}
 
-	if profile.Family != "openai-compatible" {
+	if profile.Family != "openai-compatible" && profile.Family != "google" {
 		return appprovidercenter.ModelDiscoveryResult{
 			Models:                 profile.Models,
 			Summary:                "当前 provider 不支持自动发现模型",
@@ -71,16 +72,33 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		}, nil
 	}
 
-	endpoint := normalizeOpenAIEndpoint(profile.Connection["apiEndpoint"], profile.Settings["providerLabel"])
-	if endpoint == "" || profile.Connection["apiKey"] == "" {
+	if profile.Connection["apiKey"] == "" {
 		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 400")
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/models", nil)
+	endpoint := strings.TrimRight(strings.TrimSpace(profile.Connection["apiEndpoint"]), "/")
+	reqURL := endpoint + "/models"
+	if profile.Family == "openai-compatible" {
+		endpoint = normalizeOpenAIEndpoint(endpoint, profile.Settings["providerLabel"])
+		reqURL = endpoint + "/models"
+	}
+	if profile.Family == "google" {
+		if endpoint == "" {
+			endpoint = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		reqURL = endpoint + "/models?key=" + profile.Connection["apiKey"]
+	}
+	if endpoint == "" {
+		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 400")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return appprovidercenter.ModelDiscoveryResult{}, err
 	}
-	req.Header.Set("Authorization", "Bearer "+profile.Connection["apiKey"])
+	if profile.Family == "openai-compatible" {
+		req.Header.Set("Authorization", "Bearer "+profile.Connection["apiKey"])
+	}
 
 	client := d.Client
 	if client == nil {
@@ -97,15 +115,51 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 " + strconv.Itoa(resp.StatusCode))
 	}
 
+	models, err := decodeDiscoveredModels(resp.Body, profile.Family)
+	if err != nil {
+		return appprovidercenter.ModelDiscoveryResult{}, err
+	}
+
+	return appprovidercenter.ModelDiscoveryResult{
+		Models:                 models,
+		Summary:                "发现 " + strconv.Itoa(len(models)) + " 个模型",
+		SupportsModelDiscovery: true,
+	}, nil
+}
+
+func decodeDiscoveredModels(body io.Reader, family string) ([]domainprovider.Model, error) {
+	if family == "google" {
+		var payload struct {
+			Models []struct {
+				Name string `json:"name"`
+			} `json:"models"`
+		}
+		if err := json.NewDecoder(body).Decode(&payload); err != nil {
+			return nil, err
+		}
+		models := make([]domainprovider.Model, 0, len(payload.Models))
+		for _, item := range payload.Models {
+			if item.Name == "" {
+				continue
+			}
+			models = append(models, domainprovider.Model{
+				ID:      item.Name,
+				Label:   item.Name,
+				Enabled: true,
+				Source:  "auto",
+			})
+		}
+		return models, nil
+	}
+
 	var payload struct {
 		Data []struct {
 			ID string `json:"id"`
 		} `json:"data"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return appprovidercenter.ModelDiscoveryResult{}, err
+	if err := json.NewDecoder(body).Decode(&payload); err != nil {
+		return nil, err
 	}
-
 	models := make([]domainprovider.Model, 0, len(payload.Data))
 	for _, item := range payload.Data {
 		if item.ID == "" {
@@ -118,12 +172,7 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 			Source:  "auto",
 		})
 	}
-
-	return appprovidercenter.ModelDiscoveryResult{
-		Models:                 models,
-		Summary:                "发现 " + strconv.Itoa(len(models)) + " 个模型",
-		SupportsModelDiscovery: true,
-	}, nil
+	return models, nil
 }
 
 func normalizeOpenAIEndpoint(endpoint string, providerLabel string) string {

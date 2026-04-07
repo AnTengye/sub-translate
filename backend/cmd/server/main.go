@@ -14,13 +14,13 @@ import (
 	appprovidercenter "srt-translate/internal/app/providercenter"
 	"srt-translate/internal/app/providerdefaults"
 	apptranslate "srt-translate/internal/app/translate"
+	appworkflowtemplates "srt-translate/internal/app/workflowtemplates"
 	"srt-translate/internal/infra/db"
 	"srt-translate/internal/infra/logging"
 	providercenterinfra "srt-translate/internal/infra/providercenter"
 	"srt-translate/internal/infra/providers"
 	"srt-translate/internal/infra/static"
 	workflowtemplatesinfra "srt-translate/internal/infra/workflowtemplates"
-	appworkflowtemplates "srt-translate/internal/app/workflowtemplates"
 	"srt-translate/internal/platform/config"
 	"srt-translate/internal/platform/id"
 	httpserver "srt-translate/internal/transport/http"
@@ -105,8 +105,11 @@ func main() {
 		Repository: workflowtemplatesinfra.NewFileRepository(cfg.WorkflowTemplatesPath),
 	})
 
+	rpmLimiter := providers.NewRpmLimiter()
+
 	translateService := apptranslate.NewService(apptranslate.Dependencies{
 		ProviderCenterReader: providerCenterService,
+		RpmLimiter:           rpmLimiter,
 		OpenAICompatibleTranslator: providers.OpenAICompatibleTranslator{
 			Client:          httpClient,
 			DefaultEndpoint: firstNonEmpty(cfg.Env["OPENAI_API_ENDPOINT"], "https://api.openai.com/v1"),
@@ -116,6 +119,11 @@ func main() {
 			Client:          httpClient,
 			DefaultEndpoint: firstNonEmpty(cfg.Env["CLAUDE_API_ENDPOINT"], "https://api.anthropic.com/v1"),
 			DefaultAPIKey:   cfg.Env["CLAUDE_API_KEY"],
+		},
+		GoogleTranslator: providers.GoogleTranslator{
+			Client:          httpClient,
+			DefaultEndpoint: firstNonEmpty(cfg.Env["GOOGLE_API_ENDPOINT"], "https://generativelanguage.googleapis.com/v1beta"),
+			DefaultAPIKey:   cfg.Env["GOOGLE_API_KEY"],
 		},
 		BaiduTranslator: providers.BaiduTranslator{
 			Client:           httpClient,
@@ -128,11 +136,11 @@ func main() {
 	})
 
 	handler := httpserver.NewServer(httpserver.Dependencies{
-		StaticFileHandler:      static.SPAHandler{DistDir: cfg.DistDir},
-		ProviderDefaultsReader: providerdefaults.NewService(cfg.Env),
-		ProviderCenterService:  providerCenterService,
+		StaticFileHandler:       static.SPAHandler{DistDir: cfg.DistDir},
+		ProviderDefaultsReader:  providerdefaults.NewService(cfg.Env),
+		ProviderCenterService:   providerCenterService,
 		WorkflowTemplateService: workflowTemplateService,
-		TranslateService:       translateService,
+		TranslateService:        translateService,
 		TranslationRunLogger: translationRunLoggerAdapter{
 			logger: logging.NewTranslationRunLogger(logging.TranslationRunLoggerDependencies{
 				LogDir: cfg.LogDir,

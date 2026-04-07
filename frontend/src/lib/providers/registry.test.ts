@@ -20,6 +20,7 @@ describe('provider registry', () => {
   it('lists all supported providers', () => {
     expect(listProviderDefinitions().map((provider) => provider.id)).toEqual([
       'openai-compatible',
+      'google',
       'claude-compatible',
       'baidu',
     ]);

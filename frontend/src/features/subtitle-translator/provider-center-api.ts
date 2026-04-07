@@ -5,6 +5,7 @@ export interface ProviderCenterModel {
   label: string;
   enabled: boolean;
   source: 'auto' | 'manual' | 'mixed';
+  rpmLimit: number;
 }
 
 export interface ProviderCenterProfile {

@@ -17,7 +17,13 @@ const entries = [
 
 describe('executeWorkflowTemplate', () => {
   it('runs serial fallback translate stage and then review stage', async () => {
-    const calls: Array<{ operation: string; label: string; texts: string[]; draftTexts?: string[] }> = [];
+    const calls: Array<{
+      operation: string;
+      label: string;
+      texts: string[];
+      draftTexts?: string[];
+      contextTexts?: string[];
+    }> = [];
     const template: WorkflowTemplate = {
       id: 'quality-first',
       name: '质量优先',
@@ -79,6 +85,7 @@ describe('executeWorkflowTemplate', () => {
           label: request.node.label,
           texts: request.texts,
           draftTexts: request.draftTexts,
+          contextTexts: request.contextTexts,
         });
 
         if (request.node.id === 'primary') {
@@ -109,6 +116,57 @@ describe('executeWorkflowTemplate', () => {
       draftTexts: ['你好', '世界'],
     });
     expect(result.finalTexts).toEqual(['你好呀', '世界呀']);
+  });
+
+  it('passes prior translated subtitles as context for later translate batches', async () => {
+    const contextCalls: string[][] = [];
+    const batchEntries = [
+      ...entries,
+      {
+        idx: 3,
+        timecode: '00:00:05,000 --> 00:00:06,000',
+        text: 'またね',
+      },
+    ];
+    const template: WorkflowTemplate = {
+      id: 'quality-first',
+      name: '质量优先',
+      description: 'seed',
+      scenario: 'translation',
+      stages: [
+        {
+          id: 'translate',
+          name: '主翻译与补偿',
+          type: 'translate',
+          execution: 'serial',
+          strategy: 'fallback',
+          nodes: [
+            {
+              id: 'primary',
+              label: '主翻译',
+              type: 'translate',
+              enabled: true,
+              prompt: '',
+              target: { family: 'openai-compatible', profileId: 'p1', modelId: 'm1' },
+            },
+          ],
+        },
+      ],
+    };
+
+    await executeWorkflowTemplate(batchEntries, template, {
+      batchSize: 2,
+      contextLines: 1,
+      onLog: vi.fn(),
+      executeNode: async (request) => {
+        contextCalls.push(request.contextTexts);
+        return {
+          translations: request.texts.map((text) => `译:${text}`),
+        };
+      },
+    });
+
+    expect(contextCalls).toEqual([[], ['译:世界']]);
   });
 
   it('keeps parallel candidate tracks and applies judge recommendations', async () => {

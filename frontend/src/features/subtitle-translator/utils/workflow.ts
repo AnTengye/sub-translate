@@ -10,6 +10,13 @@ import type { WorkflowTemplate, WorkflowTemplateNode } from '../workflow-types';
 
 const failurePlaceholder = '[翻译失败]';
 
+function maybeDelay(delayMs: number | undefined) {
+  if (!delayMs || delayMs <= 0) {
+    return Promise.resolve();
+  }
+  return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
+
 interface WorkflowSourceEntry {
   idx: number;
   timecode: string;
@@ -45,8 +52,10 @@ export interface WorkflowNodeResponse {
 interface ExecuteWorkflowTemplateOptions {
   batchSize: number;
   contextLines: number;
+  delayMs?: number;
   onLog: (message: string) => void;
   onProgress?: (texts: string[]) => void;
+  signal?: AbortSignal;
   executeNode: (request: WorkflowNodeRequest) => Promise<WorkflowNodeResponse>;
 }
 
@@ -59,6 +68,28 @@ export interface WorkflowExecutionResult {
 
 function isFailed(text: string | undefined) {
   return !text || text === failurePlaceholder;
+}
+
+function ensureNotAborted(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new Error('cancelled');
+  }
+}
+
+function getContextBefore(texts: string[], beforeIndex: number, count: number) {
+  if (count <= 0) {
+    return [];
+  }
+
+  const context: string[] = [];
+  for (let index = beforeIndex - 1; index >= 0 && context.length < count; index -= 1) {
+    const value = texts[index];
+    if (!isFailed(value)) {
+      context.unshift(value);
+    }
+  }
+
+  return context;
 }
 
 function normalizeTranslations(values: string[], count: number) {
@@ -95,6 +126,7 @@ export async function executeWorkflowTemplate(
   let selectedTrackByEntry = entries.map(() => '');
 
   for (const stage of template.stages) {
+    ensureNotAborted(options.signal);
     const nodes = stage.nodes.filter((node) => node.enabled);
     if (nodes.length === 0) {
       continue;
@@ -115,6 +147,7 @@ export async function executeWorkflowTemplate(
         
         let hasFailure = false;
         for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          ensureNotAborted(options.signal);
           const batchIndices = batches[batchIdx];
           options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batchIndices[0] + 1}–${batchIndices[batchIndices.length - 1] + 1}`);
           
@@ -123,7 +156,7 @@ export async function executeWorkflowTemplate(
               operation: 'translate',
               node,
               texts: batchIndices.map((index) => entries[index].text),
-              contextTexts: [],
+              contextTexts: getContextBefore(nextTexts, batchIndices[0] ?? 0, options.contextLines),
             });
 
             const translated = normalizeTranslations(response.translations, batchIndices.length);
@@ -138,6 +171,9 @@ export async function executeWorkflowTemplate(
           pendingIndices = pendingIndices.filter((index) => isFailed(nextTexts[index]));
           options.onProgress?.(nextTexts);
           if (pendingIndices.length === 0) break;
+          if (batchIdx < batches.length - 1) {
+            await maybeDelay(options.delayMs);
+          }
         }
 
         if (hasFailure && pendingIndices.length > 0 && nodes.indexOf(node) < nodes.length - 1) {
@@ -171,17 +207,21 @@ export async function executeWorkflowTemplate(
           
           const allTranslations: string[] = [];
           for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+            ensureNotAborted(options.signal);
             const batch = batches[batchIdx];
             options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
-            
+             
             const response = await options.executeNode({
               operation: 'translate',
               node,
               texts: batch.map((entry) => entry.text),
-              contextTexts: [],
+              contextTexts: getContextBefore(allTranslations, batchIdx * options.batchSize, options.contextLines),
             });
             allTranslations.push(...response.translations);
             options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
+            if (batchIdx < batches.length - 1) {
+              await maybeDelay(options.delayMs);
+            }
           }
           
           const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -217,6 +257,7 @@ export async function executeWorkflowTemplate(
       const allTranslations: string[] = [];
       
       for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+        ensureNotAborted(options.signal);
         const batch = batches[batchIdx];
         options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
         
@@ -232,6 +273,9 @@ export async function executeWorkflowTemplate(
         allDecisions.push(...decisions);
         allTranslations.push(...response.translations);
         options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
+        if (batchIdx < batches.length - 1) {
+          await maybeDelay(options.delayMs);
+        }
       }
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
@@ -251,13 +295,14 @@ export async function executeWorkflowTemplate(
         options.onLog(`📦 审校，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
         
         const allTranslations: string[] = [];
+        let processedCount = 0;
         for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+          ensureNotAborted(options.signal);
           const batch = batches[batchIdx];
           options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
           
-          const batchDrafts = batch.map((entry) => {
-            const arrayIdx = entries.findIndex(e => e.idx === entry.idx);
-            return arrayIdx >= 0 ? (currentTexts[arrayIdx] ?? '[翻译失败]') : '[翻译失败]';
+          const batchDrafts = batch.map((_, index) => {
+            return currentTexts[processedCount + index] ?? '[翻译失败]';
           });
           const response = await options.executeNode({
             operation: 'review',
@@ -267,22 +312,11 @@ export async function executeWorkflowTemplate(
             draftTexts: batchDrafts,
           });
           allTranslations.push(...response.translations);
+          processedCount += batch.length;
           options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
-        }
-        for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
-          const batch = batches[batchIdx];
-          options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
-          
-          const batchDrafts = batch.map((entry) => currentTexts[entry.idx] ?? '[翻译失败]');
-          const response = await options.executeNode({
-            operation: 'review',
-            node,
-            texts: batch.map((entry) => entry.text),
-            contextTexts: [],
-            draftTexts: batchDrafts,
-          });
-          allTranslations.push(...response.translations);
-          options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
+          if (batchIdx < batches.length - 1) {
+            await maybeDelay(options.delayMs);
+          }
         }
         
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
