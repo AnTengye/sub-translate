@@ -16,7 +16,12 @@ import {
 } from './provider-center-api';
 import { createInitialState, subtitleTranslatorReducer } from './state/reducer';
 import { buildProviderRequestConfig, buildProviderTargetOptions, type ProviderTarget } from './target-selection';
-import { executeWorkflowTemplate, type WorkflowCandidateTrack, type WorkflowJudgeDecision } from './utils/workflow';
+import {
+  executeWorkflowTemplate,
+  type WorkflowCandidateTrack,
+  type WorkflowExecutionSnapshot,
+  type WorkflowJudgeDecision,
+} from './utils/workflow';
 import { fetchWorkflowTemplates, saveWorkflowTemplates } from './workflow-api';
 import { createWorkflowRunExport, parseWorkflowRunExport } from './workflow-run-api';
 import type { WorkflowTemplate } from './workflow-types';
@@ -75,6 +80,54 @@ function findFirstRunnableTarget(template: WorkflowTemplate | null): ProviderTar
 
 function isCancellationError(error: unknown) {
   return error instanceof Error && (error.name === 'AbortError' || error.message === 'cancelled');
+}
+
+function isSuccessfulWorkflowText(text: string | null | undefined) {
+  return Boolean(text && text !== '[翻译失败]');
+}
+
+function inferWorkflowSnapshot(args: {
+  entries: SubtitleEntry[];
+  display: SubtitleEntry[];
+  workflowDraft: WorkflowTemplate | null;
+  pausedSnapshot: WorkflowExecutionSnapshot | null;
+  candidateTracks: WorkflowCandidateTrack[];
+  judgeDecisions: WorkflowJudgeDecision[];
+  selectedTrackByEntry: string[];
+  fallbackTexts: string[];
+}): WorkflowExecutionSnapshot | undefined {
+  if (args.pausedSnapshot) {
+    return args.pausedSnapshot;
+  }
+  if (!args.workflowDraft || args.entries.length === 0 || args.display.length !== args.entries.length) {
+    return undefined;
+  }
+
+  const currentTexts =
+    args.fallbackTexts.length === args.entries.length
+      ? args.fallbackTexts.map((text) => (isSuccessfulWorkflowText(text) ? text : '[翻译失败]'))
+      : args.display.map((entry) => (isSuccessfulWorkflowText(entry.translated) ? entry.translated ?? '[翻译失败]' : '[翻译失败]'));
+  const hasRecoverableProgress = currentTexts.some((text) => isSuccessfulWorkflowText(text));
+  if (!hasRecoverableProgress) {
+    return undefined;
+  }
+
+  return {
+    version: 1,
+    stageIndex: 0,
+    nodeIndex: 0,
+    batchIndex: 0,
+    completedBatches: 0,
+    pauseReason: 'user',
+    currentTexts,
+    candidateTracks: args.candidateTracks.map((track) => ({ ...track, texts: track.texts.slice() })),
+    judgeDecisions: args.judgeDecisions.map((decision) => ({
+      ...decision,
+      scores: decision.scores ? { ...decision.scores } : undefined,
+    })),
+    selectedTrackByEntry: args.selectedTrackByEntry.slice(),
+    nodeRuntime: {},
+  };
 }
 
 async function readBrowserFile(file: File) {
@@ -159,6 +212,7 @@ export default function SubtitleTranslatorPage() {
                 sourceContent: payload.run.sourceContent,
                 entries: payload.run.entries,
                 display: payload.run.display,
+                providerCenter: payload.run.providerCenter,
                 translationConfig: payload.run.translationConfig,
                 workflowTemplates: payload.run.workflowTemplates,
                 activeTemplateId: payload.run.activeTemplateId,
@@ -222,13 +276,27 @@ export default function SubtitleTranslatorPage() {
       return;
     }
 
+    const initialSnapshot = inferWorkflowSnapshot({
+      entries: state.entries,
+      display: state.display,
+      workflowDraft: state.workflowDraft,
+      pausedSnapshot: state.pausedSnapshot,
+      candidateTracks,
+      judgeDecisions,
+      selectedTrackByEntry,
+      fallbackTexts,
+    });
+    const isResume = Boolean(initialSnapshot);
+
     setBusy(true);
     pauseRequestedRef.current = false;
-    setCandidateTracks([]);
-    setJudgeDecisions([]);
-    setSelectedTrackByEntry([]);
-    setFallbackTexts([]);
-    dispatch({ type: 'startTranslation' });
+    if (!isResume) {
+      setCandidateTracks([]);
+      setJudgeDecisions([]);
+      setSelectedTrackByEntry([]);
+      setFallbackTexts([]);
+    }
+    dispatch({ type: 'startTranslation', preserveProgress: isResume });
     dispatch({ type: 'setRunStatus', status: 'running' });
     dispatch({ type: 'setPausedSnapshot', snapshot: null });
     
@@ -271,7 +339,7 @@ export default function SubtitleTranslatorPage() {
         contextLines: state.translationConfig.contextLines,
         delayMs: 150,
         signal: controller.signal,
-        initialSnapshot: state.pausedSnapshot ?? undefined,
+        initialSnapshot,
         shouldPause: () => pauseRequestedRef.current,
         onLog: (message) =>
           dispatch({
@@ -309,13 +377,7 @@ export default function SubtitleTranslatorPage() {
               contextTexts: request.contextTexts,
               draftTexts: request.draftTexts,
               candidateSets: request.candidateSets,
-              batch: {
-                kind: 'translate',
-                sequence: 1,
-                startIndex: 0,
-                endIndex: Math.max(request.texts.length - 1, 0),
-                totalEntries: state.entries.length,
-              },
+              batch: request.batch,
               runId: activeRunId,
               config: {
                 ...targetConfig.config,

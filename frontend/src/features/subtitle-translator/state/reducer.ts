@@ -30,7 +30,7 @@ export type SubtitleTranslatorAction =
   | { type: 'setFallbackTarget'; target: ProviderTarget | null }
   | { type: 'updateTranslationConfig'; key: keyof TranslationConfig; value: number }
   | { type: 'toggleAdvancedParams'; open?: boolean }
-  | { type: 'startTranslation' }
+  | { type: 'startTranslation'; preserveProgress?: boolean }
   | { type: 'translationProgress'; display: SubtitleEntry[]; progress: number }
   | { type: 'translationDone'; display: SubtitleEntry[] }
   | { type: 'translationFailed'; error: string }
@@ -44,6 +44,7 @@ export type SubtitleTranslatorAction =
         sourceContent: string;
         entries: SubtitleEntry[];
         display: SubtitleEntry[];
+        providerCenter: ProviderCenterStateData | null;
         translationConfig: TranslationConfig;
         workflowTemplates: WorkflowTemplateStateData;
         activeTemplateId: string | null;
@@ -234,6 +235,15 @@ export function subtitleTranslatorReducer(
         advancedParamsOpen: action.open ?? !state.advancedParamsOpen,
       };
     case 'startTranslation':
+      if (action.preserveProgress) {
+        return {
+          ...state,
+          step: 'translating',
+          error: null,
+          filter: 'all',
+          advancedParamsOpen: false,
+        };
+      }
       return {
         ...state,
         step: 'translating',
@@ -285,6 +295,13 @@ export function subtitleTranslatorReducer(
         display: action.display,
       };
     case 'restoreWorkflowRun':
+      {
+        const defaults = getDefaultTargets(action.payload.providerCenter);
+        const targets = reconcileTargets(
+          action.payload.providerCenter,
+          defaults.primaryTarget,
+          defaults.fallbackTarget,
+        );
       return {
         ...state,
         step: action.payload.runStatus === 'completed' ? 'done' : 'config',
@@ -292,16 +309,20 @@ export function subtitleTranslatorReducer(
         sourceContent: action.payload.sourceContent,
         entries: action.payload.entries,
         display: action.payload.display,
+        providerCenter: action.payload.providerCenter,
         translationConfig: action.payload.translationConfig,
         workflowTemplates: action.payload.workflowTemplates,
         activeTemplateId: action.payload.activeTemplateId,
         workflowDraft: action.payload.workflowDraft,
+        primaryTarget: targets.primaryTarget,
+        fallbackTarget: targets.fallbackTarget,
         logs: action.payload.logs,
         progress: action.payload.progress,
         runStatus: action.payload.runStatus,
         pausedSnapshot: action.payload.pausedSnapshot,
         error: null,
       };
+      }
     case 'setFilter':
       return {
         ...state,

@@ -532,6 +532,160 @@ describe('SubtitleTranslatorPage workflow mode', () => {
     expect(await screen.findByText('resume.srt')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /继续工作流/i })).toBeInTheDocument();
     expect(screen.getByText('你好', { selector: '.sub-text.translated' })).toBeInTheDocument();
+    expect(screen.getByLabelText(/主翻译 模型/i)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /Provider 中心/i }));
+    expect(await screen.findByRole('dialog', { name: 'Provider Center' })).toBeInTheDocument();
+  });
+
+  it('restores provider center and model selection when importing after reset', async () => {
+    renderPage();
+    await importSubtitle();
+
+    fireEvent.click(screen.getByRole('button', { name: /重新上传/i }));
+
+    const snapshotFile = new File(
+      [
+        JSON.stringify(
+          createWorkflowRunExport({
+            fileName: 'resume-after-reset.srt',
+            sourceContent: '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n',
+            entries: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: null,
+                status: 'pending',
+              },
+            ],
+            display: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: '你好',
+                status: 'done',
+              },
+            ],
+            providerCenter: providerCenterState as never,
+            workflowTemplates: workflowTemplates as never,
+            activeTemplateId: 'quality-first',
+            workflowDraft: workflowTemplates.templates[0] as never,
+            translationConfig: { batchSize: 20, contextLines: 3, temperature: 0.3 },
+            logs: [{ t: '12:00:00', msg: '⏸️ 工作流已暂停，可稍后继续' }],
+            progress: 50,
+            runStatus: 'paused',
+            pausedSnapshot: {
+              version: 1,
+              stageIndex: 0,
+              nodeIndex: 0,
+              batchIndex: 1,
+              completedBatches: 1,
+              pauseReason: 'user',
+              currentTexts: ['你好'],
+              candidateTracks: [],
+              judgeDecisions: [],
+              selectedTrackByEntry: ['current'],
+              nodeRuntime: {},
+            },
+            candidateTracks: [],
+            judgeDecisions: [],
+            selectedTrackByEntry: ['current'],
+            fallbackTexts: ['你好'],
+          }),
+        ),
+      ],
+      'resume-after-reset.workflow.json',
+      { type: 'application/json' },
+    );
+
+    fireEvent.change(screen.getByLabelText('导入工作流文件'), { target: { files: [snapshotFile] } });
+
+    expect(await screen.findByLabelText(/主翻译 模型/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Provider 中心/i }));
+    expect(await screen.findByRole('dialog', { name: 'Provider Center' })).toBeInTheDocument();
+  });
+
+  it('resumes only unfinished subtitles after importing a workflow export without an explicit paused snapshot', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof createFetchMock>;
+    renderPage();
+
+    const snapshotFile = new File(
+      [
+        JSON.stringify(
+          createWorkflowRunExport({
+            fileName: 'resume-from-results.srt',
+            sourceContent: '1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n\n2\n00:00:03,000 --> 00:00:04,000\n世界\n',
+            entries: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: null,
+                status: 'pending',
+              },
+              {
+                idx: 2,
+                timecode: '00:00:03,000 --> 00:00:04,000',
+                text: '世界',
+                translated: null,
+                status: 'pending',
+              },
+            ],
+            display: [
+              {
+                idx: 1,
+                timecode: '00:00:01,000 --> 00:00:02,000',
+                text: 'こんにちは',
+                translated: '你好',
+                status: 'done',
+              },
+              {
+                idx: 2,
+                timecode: '00:00:03,000 --> 00:00:04,000',
+                text: '世界',
+                translated: '',
+                status: 'pending',
+              },
+            ],
+            providerCenter: providerCenterState as never,
+            workflowTemplates: workflowTemplates as never,
+            activeTemplateId: 'quality-first',
+            workflowDraft: workflowTemplates.templates[0] as never,
+            translationConfig: { batchSize: 20, contextLines: 3, temperature: 0.3 },
+            logs: [{ t: '12:00:00', msg: '已完成 1 条，等待继续' }],
+            progress: 50,
+            runStatus: 'idle',
+            pausedSnapshot: null,
+            candidateTracks: [],
+            judgeDecisions: [],
+            selectedTrackByEntry: [],
+            fallbackTexts: ['你好', ''],
+          }),
+        ),
+      ],
+      'resume-from-results.workflow.json',
+      { type: 'application/json' },
+    );
+
+    fireEvent.change(screen.getByLabelText('导入工作流文件'), { target: { files: [snapshotFile] } });
+
+    expect(await screen.findByText('resume-from-results.srt')).toBeInTheDocument();
+    expect(screen.getByText('你好', { selector: '.sub-text.translated' })).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /开始工作流/i }));
+
+    await waitFor(() =>
+      expect(fetchMock).toHaveBeenCalledWith(
+        '/api/translate/openai-compatible',
+        expect.objectContaining({
+          body: expect.stringContaining('"texts":["世界"]'),
+        }),
+      ),
+    );
+    expect(await screen.findByText('你好呀', { selector: '.sub-text.translated' })).toBeInTheDocument();
+    expect(await screen.findByText('世界呀', { selector: '.sub-text.translated' })).toBeInTheDocument();
   });
 
   it('loads workflow templates and switches active template', async () => {

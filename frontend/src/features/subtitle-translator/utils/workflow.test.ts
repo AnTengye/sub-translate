@@ -330,6 +330,83 @@ describe('executeWorkflowTemplate', () => {
     expect(resumed.finalTexts).toEqual(['译:こんにちは', '译:世界', '译:またね']);
   });
 
+  it('reports the real batch metadata when resuming from a paused snapshot', async () => {
+    const batches: Array<{ sequence: number; startIndex: number; endIndex: number; texts: string[] }> = [];
+    const template: WorkflowTemplate = {
+      id: 'quality-first',
+      name: '质量优先',
+      description: 'seed',
+      scenario: 'translation',
+      stages: [
+        {
+          id: 'translate',
+          name: '主翻译与补偿',
+          type: 'translate',
+          execution: 'serial',
+          strategy: 'fallback',
+          nodes: [
+            {
+              id: 'primary',
+              label: '主翻译',
+              type: 'translate',
+              enabled: true,
+              prompt: '',
+              target: { family: 'openai-compatible', profileId: 'p1', modelId: 'm1' },
+            },
+          ],
+        },
+      ],
+    };
+    const batchEntries = [
+      ...entries,
+      {
+        idx: 3,
+        timecode: '00:00:05,000 --> 00:00:06,000',
+        text: 'またね',
+      },
+    ];
+
+    const resumed = await executeWorkflowTemplate(batchEntries, template, {
+      batchSize: 2,
+      contextLines: 0,
+      onLog: vi.fn(),
+      initialSnapshot: {
+        version: 1,
+        stageIndex: 0,
+        nodeIndex: 0,
+        batchIndex: 1,
+        completedBatches: 1,
+        pauseReason: 'user',
+        currentTexts: ['译:こんにちは', '译:世界', '[翻译失败]'],
+        candidateTracks: [],
+        judgeDecisions: [],
+        selectedTrackByEntry: [],
+        nodeRuntime: {},
+      },
+      executeNode: async (request) => {
+        batches.push({
+          sequence: request.batch.sequence,
+          startIndex: request.batch.startIndex,
+          endIndex: request.batch.endIndex,
+          texts: request.texts,
+        });
+        return {
+          translations: request.texts.map((text) => `译:${text}`),
+        };
+      },
+    });
+
+    expect(batches).toEqual([
+      {
+        sequence: 2,
+        startIndex: 2,
+        endIndex: 2,
+        texts: ['またね'],
+      },
+    ]);
+    expect(resumed.finalTexts).toEqual(['译:こんにちは', '译:世界', '译:またね']);
+  });
+
   it('interrupts the current node after repeated rate-limit hits', async () => {
     const logs: string[] = [];
     const template: WorkflowTemplate = {

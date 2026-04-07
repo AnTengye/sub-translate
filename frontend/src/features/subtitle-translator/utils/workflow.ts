@@ -7,6 +7,7 @@ function chunkArray<T>(arr: T[], size: number): T[][] {
 }
 
 import type { WorkflowTemplate, WorkflowTemplateNode } from '../workflow-types';
+import type { TranslationBatchMetadata } from '../../../lib/providers/types';
 
 const failurePlaceholder = '[翻译失败]';
 
@@ -40,6 +41,7 @@ export interface WorkflowNodeRequest {
   node: WorkflowTemplateNode;
   texts: string[];
   contextTexts: string[];
+  batch: TranslationBatchMetadata;
   draftTexts?: string[];
   candidateSets?: WorkflowCandidateTrack[];
 }
@@ -207,7 +209,10 @@ export async function executeWorkflowTemplate(
 
     if (stage.type === 'translate' && stage.execution === 'serial' && stage.strategy === 'fallback') {
       const nextTexts = currentTexts.slice();
-      let pendingIndices = entries.map((_, index) => index);
+      const hasRecoveredTexts = nextTexts.some((text) => !isFailed(text));
+      let pendingIndices = hasRecoveredTexts
+        ? entries.flatMap((_, index) => (isFailed(nextTexts[index]) ? [index] : []))
+        : entries.map((_, index) => index);
 
       for (let nodeIndex = stageIndex === (initialSnapshot?.stageIndex ?? -1) ? initialSnapshot?.nodeIndex ?? 0 : 0; nodeIndex < nodes.length; nodeIndex++) {
         const node = nodes[nodeIndex];
@@ -220,7 +225,12 @@ export async function executeWorkflowTemplate(
         options.onLog(`📦 节点 [${node.label}] 串行翻译，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
         
         let hasFailure = false;
-        const startBatchIndex = stageIndex === (initialSnapshot?.stageIndex ?? -1) && nodeIndex === (initialSnapshot?.nodeIndex ?? -1) ? initialSnapshot?.batchIndex ?? 0 : 0;
+        const startBatchIndex =
+          hasRecoveredTexts
+            ? 0
+            : stageIndex === (initialSnapshot?.stageIndex ?? -1) && nodeIndex === (initialSnapshot?.nodeIndex ?? -1)
+              ? initialSnapshot?.batchIndex ?? 0
+              : 0;
         for (let batchIdx = startBatchIndex; batchIdx < batches.length; batchIdx++) {
           ensureNotAborted(options.signal);
           const batchIndices = batches[batchIdx];
@@ -239,6 +249,13 @@ export async function executeWorkflowTemplate(
               node,
               texts: batchIndices.map((index) => entries[index].text),
               contextTexts: getContextBefore(nextTexts, batchIndices[0] ?? 0, options.contextLines),
+              batch: {
+                kind: 'translate',
+                sequence: Math.floor((batchIndices[0] ?? 0) / options.batchSize) + 1,
+                startIndex: batchIndices[0] ?? 0,
+                endIndex: batchIndices[batchIndices.length - 1] ?? 0,
+                totalEntries: entries.length,
+              },
             });
 
             const translated = normalizeTranslations(response.translations, batchIndices.length);
@@ -321,6 +338,13 @@ export async function executeWorkflowTemplate(
               node,
               texts: batch.map((entry) => entry.text),
               contextTexts: getContextBefore(allTranslations, batchIdx * options.batchSize, options.contextLines),
+              batch: {
+                kind: 'translate',
+                sequence: batchIdx + 1,
+                startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
+                endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
+                totalEntries: entries.length,
+              },
             });
             allTranslations.push(...response.translations);
             options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
@@ -371,6 +395,13 @@ export async function executeWorkflowTemplate(
           node,
           texts: batch.map((entry) => entry.text),
           contextTexts: [],
+          batch: {
+            kind: 'translate',
+            sequence: batchIdx + 1,
+            startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
+            endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
+            totalEntries: entries.length,
+          },
           candidateSets: candidateTracks,
         });
         
@@ -414,6 +445,13 @@ export async function executeWorkflowTemplate(
             node,
             texts: batch.map((entry) => entry.text),
             contextTexts: [],
+            batch: {
+              kind: 'translate',
+              sequence: batchIdx + 1,
+              startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
+              endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
+              totalEntries: entries.length,
+            },
             draftTexts: batchDrafts,
           });
           allTranslations.push(...response.translations);
