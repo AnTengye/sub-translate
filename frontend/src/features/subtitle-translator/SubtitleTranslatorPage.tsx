@@ -86,6 +86,20 @@ function isSuccessfulWorkflowText(text: string | null | undefined) {
   return Boolean(text && text !== '[翻译失败]');
 }
 
+function formatJudgeConfidence(value: number) {
+  return Number.isFinite(value) ? value.toFixed(2) : '0.00';
+}
+
+function getJudgeStatusLabel(decision: WorkflowJudgeDecision) {
+  if (decision.debateReason) {
+    return '已进入仲裁';
+  }
+  if (decision.isDisputed) {
+    return '存在争议';
+  }
+  return '无争议';
+}
+
 function inferWorkflowSnapshot(args: {
   entries: SubtitleEntry[];
   display: SubtitleEntry[];
@@ -124,6 +138,7 @@ function inferWorkflowSnapshot(args: {
     judgeDecisions: args.judgeDecisions.map((decision) => ({
       ...decision,
       scores: decision.scores ? { ...decision.scores } : undefined,
+      dimensionScores: decision.dimensionScores?.map((dimensionScore) => ({ ...dimensionScore })),
     })),
     selectedTrackByEntry: args.selectedTrackByEntry.slice(),
     nodeRuntime: {},
@@ -240,6 +255,10 @@ export default function SubtitleTranslatorPage() {
 
   const doneCount = state.display.filter((entry) => entry.status === 'done').length;
   const errorCount = state.display.filter((entry) => entry.status === 'error').length;
+  const averageConfidence =
+    judgeDecisions.length > 0
+      ? (judgeDecisions.reduce((sum, decision) => sum + decision.confidence, 0) / judgeDecisions.length).toFixed(2)
+      : '0.00';
 
   async function handleSaveWorkflowTemplate() {
     const nextState = {
@@ -655,9 +674,9 @@ export default function SubtitleTranslatorPage() {
               <div className="stat-sub">当前模板输出路径</div>
             </div>
             <div className="stat-card filtered">
-              <div className="stat-label">评估建议</div>
-              <div className="stat-val">{judgeDecisions.length}</div>
-              <div className="stat-sub">judge 返回条目</div>
+              <div className="stat-label">平均置信度</div>
+              <div className="stat-val">{averageConfidence}</div>
+              <div className="stat-sub">{judgeDecisions.length > 0 ? `${judgeDecisions.length} 条已评审` : '等待 judge 输出'}</div>
             </div>
           </div>
 
@@ -668,7 +687,14 @@ export default function SubtitleTranslatorPage() {
                 {judgeDecisions.map((decision, index) => (
                   <div key={`${decision.winner}-${index}`} className="judge-summary-item">
                     <strong>条目 {index + 1}</strong>
-                    <span>{decision.reason}</span>
+                    <span>综合置信度 {formatJudgeConfidence(decision.confidence)}</span>
+                    <span>{getJudgeStatusLabel(decision)}</span>
+                    <span>{decision.debateReason ?? decision.reason}</span>
+                    {decision.dimensionScores?.map((dimensionScore) => (
+                      <span key={`${dimensionScore.nodeId}-${index}`}>
+                        {dimensionScore.dimension || dimensionScore.nodeId}: {dimensionScore.winner} ({dimensionScore.score}分)
+                      </span>
+                    ))}
                   </div>
                 ))}
               </div>
@@ -680,8 +706,10 @@ export default function SubtitleTranslatorPage() {
           <ActivityConsole logs={state.logs} />
 
           <div className="sub-list workflow-sub-list">
-            {state.display.map((entry, index) => (
-              <div key={`${entry.idx}-${entry.timecode}`} className="sub-card">
+            {state.display.map((entry, index) => {
+              const decision = judgeDecisions[index];
+              return (
+                <div key={`${entry.idx}-${entry.timecode}`} className="sub-card">
                 <div className="sub-card-header">
                   <div className="sub-meta">
                     <span className="sub-index">#{entry.idx}</span>
@@ -720,10 +748,27 @@ export default function SubtitleTranslatorPage() {
                         </select>
                       </label>
                     ) : null}
+                    {decision ? (
+                      <div className="judge-detail-panel">
+                        <div className="sub-col-label">对抗评审</div>
+                        <div className="judge-summary-item">
+                          <strong>综合置信度 {formatJudgeConfidence(decision.confidence)}</strong>
+                          <span>{getJudgeStatusLabel(decision)}</span>
+                          <span>最终选择: {decision.winner || '未定'}</span>
+                          {decision.dimensionScores?.map((dimensionScore) => (
+                            <span key={`${entry.idx}-${dimensionScore.nodeId}`}>
+                              {dimensionScore.dimension || dimensionScore.nodeId} → {dimensionScore.winner} ({dimensionScore.score}分) {dimensionScore.reason}
+                            </span>
+                          ))}
+                          {decision.debateReason ? <span>{decision.debateReason}</span> : null}
+                        </div>
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-              </div>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </section>
       </div>

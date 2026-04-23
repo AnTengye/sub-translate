@@ -91,10 +91,22 @@ export interface WorkflowCandidateTrack {
   texts: string[];
 }
 
+export interface JudgeDimensionScore {
+  nodeId: string;
+  dimension: string;
+  winner: string;
+  score: number;
+  reason: string;
+}
+
 export interface WorkflowJudgeDecision {
   winner: string;
   reason: string;
   scores?: Record<string, number>;
+  confidence: number;
+  dimensionScores?: JudgeDimensionScore[];
+  isDisputed?: boolean;
+  debateReason?: string;
 }
 
 export interface WorkflowNodeRequest {
@@ -203,6 +215,8 @@ export interface WorkflowExecutionResult {
   snapshot: WorkflowExecutionSnapshot;
 }
 
+const judgeConfidenceThreshold = 0.65;
+
 function isFailed(text: string | undefined) {
   return !text || text === failurePlaceholder;
 }
@@ -233,6 +247,53 @@ function normalizeTranslations(values: string[], count: number) {
   return Array.from({ length: count }, (_, index) => values[index] ?? failurePlaceholder);
 }
 
+function normalizeConfidence(value: number) {
+  return Number(value.toFixed(2));
+}
+
+function normalizeJudgeScore(value: unknown, scores: Record<string, number> | undefined, winner: string) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  const winnerScore = scores?.[winner];
+  if (typeof winnerScore === 'number' && Number.isFinite(winnerScore)) {
+    return winnerScore;
+  }
+  return 50;
+}
+
+function cloneDimensionScores(values?: JudgeDimensionScore[]) {
+  return values?.map((score) => ({ ...score }));
+}
+
+function cloneJudgeDecision(decision: WorkflowJudgeDecision): WorkflowJudgeDecision {
+  return {
+    ...decision,
+    scores: decision.scores ? { ...decision.scores } : undefined,
+    dimensionScores: cloneDimensionScores(decision.dimensionScores),
+  };
+}
+
+function sliceCandidateTracks(candidateTracks: WorkflowCandidateTrack[], startIndex: number, count: number) {
+  return candidateTracks.map((track) => ({
+    key: track.key,
+    label: track.label,
+    texts: track.texts.slice(startIndex, startIndex + count),
+  }));
+}
+
+function pickCandidateTracks(candidateTracks: WorkflowCandidateTrack[], indices: number[]) {
+  return candidateTracks.map((track) => ({
+    key: track.key,
+    label: track.label,
+    texts: indices.map((index) => track.texts[index] ?? failurePlaceholder),
+  }));
+}
+
+function getCandidateText(candidateTracks: WorkflowCandidateTrack[], winner: string, index: number, fallbackText: string) {
+  return candidateTracks.find((track) => track.key === winner)?.texts[index] ?? fallbackText;
+}
+
 function parseJudgeDecisions(metadata: Record<string, unknown> | undefined): WorkflowJudgeDecision[] {
   const raw = metadata?.decisions;
   if (!Array.isArray(raw)) {
@@ -241,13 +302,113 @@ function parseJudgeDecisions(metadata: Record<string, unknown> | undefined): Wor
 
   return raw.map((item) => {
     const object = (item ?? {}) as Record<string, unknown>;
+    const scores =
+      object.scores && typeof object.scores === 'object'
+        ? (object.scores as Record<string, number>)
+        : undefined;
+    const winner = String(object.winner ?? '');
+    const score = normalizeJudgeScore(object.score, scores, winner);
+    const dimensionScores = Array.isArray(object.dimensionScores)
+      ? object.dimensionScores
+          .map((dimensionItem) => {
+            const dimensionObject = (dimensionItem ?? {}) as Record<string, unknown>;
+            const dimensionWinner = String(dimensionObject.winner ?? winner);
+            const dimensionScoreMap =
+              dimensionObject.scores && typeof dimensionObject.scores === 'object'
+                ? (dimensionObject.scores as Record<string, number>)
+                : undefined;
+            return {
+              nodeId: String(dimensionObject.nodeId ?? ''),
+              dimension: String(dimensionObject.dimension ?? dimensionObject.label ?? ''),
+              winner: dimensionWinner,
+              score: normalizeJudgeScore(dimensionObject.score, dimensionScoreMap, dimensionWinner),
+              reason: String(dimensionObject.reason ?? ''),
+            } satisfies JudgeDimensionScore;
+          })
+          .filter((dimensionScore) => dimensionScore.winner)
+      : undefined;
     return {
-      winner: String(object.winner ?? ''),
+      winner,
       reason: String(object.reason ?? ''),
-      scores:
-        object.scores && typeof object.scores === 'object'
-          ? (object.scores as Record<string, number>)
-          : undefined,
+      scores,
+      confidence:
+        typeof object.confidence === 'number' && Number.isFinite(object.confidence)
+          ? object.confidence
+          : winner
+            ? 1
+            : 0,
+      dimensionScores:
+        dimensionScores && dimensionScores.length > 0
+          ? dimensionScores
+          : winner
+            ? [
+                {
+                  nodeId: String(object.nodeId ?? ''),
+                  dimension: String(object.dimension ?? object.label ?? ''),
+                  winner,
+                  score,
+                  reason: String(object.reason ?? ''),
+                },
+              ]
+            : undefined,
+      isDisputed: Boolean(object.isDisputed),
+      debateReason: object.debateReason ? String(object.debateReason) : undefined,
+    };
+  });
+}
+
+function consolidateDimensionScores(
+  nodes: WorkflowTemplateNode[],
+  dimensionDecisionSets: WorkflowJudgeDecision[][],
+  batchCandidateTracks: WorkflowCandidateTrack[],
+  batchFallbackTexts: string[],
+): WorkflowJudgeDecision[] {
+  return Array.from({ length: batchFallbackTexts.length }, (_, index) => {
+    const dimensionScores = nodes.flatMap((node, nodeIndex) => {
+      const decision = dimensionDecisionSets[nodeIndex]?.[index];
+      if (!decision?.winner) {
+        return [];
+      }
+      const score = normalizeJudgeScore(decision.dimensionScores?.[0]?.score, decision.scores, decision.winner);
+      return [
+        {
+          nodeId: node.id,
+          dimension: node.judgeDimension ?? node.label,
+          winner: decision.winner,
+          score,
+          reason: decision.reason,
+        } satisfies JudgeDimensionScore,
+      ];
+    });
+
+    if (dimensionScores.length === 0) {
+      const fallbackWinner = batchCandidateTracks[0]?.key ?? '';
+      return {
+        winner: fallbackWinner,
+        reason: '',
+        confidence: 0,
+        dimensionScores: [],
+        isDisputed: true,
+      };
+    }
+
+    const winnerCounts = new Map<string, number>();
+    for (const score of dimensionScores) {
+      winnerCounts.set(score.winner, (winnerCounts.get(score.winner) ?? 0) + 1);
+    }
+    const [winner, count] = [...winnerCounts.entries()].sort((a, b) => b[1] - a[1])[0] ?? [
+      batchCandidateTracks[0]?.key ?? '',
+      0,
+    ];
+    const averageScore =
+      dimensionScores.reduce((sum, dimensionScore) => sum + dimensionScore.score, 0) / dimensionScores.length;
+    const confidence = normalizeConfidence((count / dimensionScores.length) * (averageScore / 100));
+    return {
+      winner,
+      reason: dimensionScores.map((score) => `${score.dimension}: ${score.reason}`).join(' | '),
+      confidence,
+      dimensionScores,
+      isDisputed: confidence < judgeConfidenceThreshold,
     };
   });
 }
@@ -273,7 +434,7 @@ function buildSnapshot(
     pauseReason,
     currentTexts: currentTexts.slice(),
     candidateTracks: candidateTracks.map((track) => ({ ...track, texts: track.texts.slice() })),
-    judgeDecisions: judgeDecisions.map((decision) => ({ ...decision, scores: decision.scores ? { ...decision.scores } : undefined })),
+    judgeDecisions: judgeDecisions.map(cloneJudgeDecision),
     selectedTrackByEntry: selectedTrackByEntry.slice(),
     nodeRuntime: Object.fromEntries(
       Object.entries(nodeRuntime).map(([key, value]) => [key, { ...value }]),
@@ -294,7 +455,7 @@ export async function executeWorkflowTemplate(
   const initialSnapshot = options.initialSnapshot;
   let currentTexts = initialSnapshot?.currentTexts.slice() ?? entries.map(() => failurePlaceholder);
   let candidateTracks: WorkflowCandidateTrack[] = initialSnapshot?.candidateTracks.map((track) => ({ ...track, texts: track.texts.slice() })) ?? [];
-  let judgeDecisions: WorkflowJudgeDecision[] = initialSnapshot?.judgeDecisions.map((decision) => ({ ...decision, scores: decision.scores ? { ...decision.scores } : undefined })) ?? [];
+  let judgeDecisions: WorkflowJudgeDecision[] = initialSnapshot?.judgeDecisions.map(cloneJudgeDecision) ?? [];
   let selectedTrackByEntry = initialSnapshot?.selectedTrackByEntry.slice() ?? entries.map(() => '');
   let completedBatches = initialSnapshot?.completedBatches ?? 0;
   let nodeRuntime = Object.fromEntries(
@@ -558,24 +719,247 @@ export async function executeWorkflowTemplate(
       continue;
     }
 
-    if (stage.type === 'judge') {
-      const node = nodes[0];
-      options.onLog(`⚖️ 开始评估阶段: 节点 [${node.label}]`);
+    if (stage.type === 'judge' && stage.strategy === 'adversarial') {
+      options.onLog(`⚖️ 开始对抗评审阶段: ${nodes.map((node) => node.label).join(', ')}`);
       const startTime = Date.now();
-      
       const batches = chunkArray(entries, options.batchSize);
-      options.onLog(`📦 [${node.label}] 共 ${batches.length} 批 (每批最多 ${options.batchSize} 条)`);
-      
-      const allDecisions: WorkflowJudgeDecision[] = [];
-      const allTranslations: string[] = [];
-      let judgeSuccess = true;
-      
-      for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
+      const nextTexts = currentTexts.slice();
+      const nextDecisions =
+        judgeDecisions.length === entries.length
+          ? judgeDecisions.map(cloneJudgeDecision)
+          : Array.from({ length: entries.length }, (_, index) => ({
+              winner: selectedTrackByEntry[index] ?? candidateTracks[0]?.key ?? '',
+              reason: '',
+              confidence: 0,
+            }));
+      const nextSelectedTracks = selectedTrackByEntry.length === entries.length
+        ? selectedTrackByEntry.slice()
+        : entries.map(() => candidateTracks[0]?.key ?? '');
+      const startBatchIndex =
+        stageIndex === (initialSnapshot?.stageIndex ?? -1) ? initialSnapshot?.batchIndex ?? 0 : 0;
+
+      for (let batchIdx = startBatchIndex; batchIdx < batches.length; batchIdx++) {
         ensureNotAborted(options.signal);
         const batch = batches[batchIdx];
         const batchStartTime = Date.now();
         const startEntry = batchIdx * options.batchSize + 1;
         const endEntry = batchIdx * options.batchSize + batch.length;
+        const batchStartIndex = batchIdx * options.batchSize;
+        options.onLog(`  ⏳ 对抗评审批次 ${batchIdx + 1}/${batches.length}: 条目 ${startEntry}–${endEntry}`);
+
+        const batchCandidateTracks = sliceCandidateTracks(candidateTracks, batchStartIndex, batch.length);
+        const dimensionDecisionSets = await Promise.all(
+          nodes.map(async (node) => {
+            try {
+              const response = await options.executeNode({
+                operation: 'judge',
+                node,
+                texts: batch.map((entry) => entry.text),
+                contextTexts: [],
+                batch: {
+                  kind: 'translate',
+                  sequence: batchIdx + 1,
+                  startIndex: batchStartIndex,
+                  endIndex: batchStartIndex + batch.length - 1,
+                  totalEntries: entries.length,
+                },
+                candidateSets: batchCandidateTracks,
+              });
+              return parseJudgeDecisions(response.metadata);
+            } catch (batchError) {
+              const errorMsg = batchError instanceof Error ? batchError.message : '未知错误';
+              options.onLog(`  ❌ [${node.label}] 评审失败: ${errorMsg}`);
+              return [];
+            }
+          }),
+        );
+
+        const consolidated = consolidateDimensionScores(
+          nodes,
+          dimensionDecisionSets,
+          batchCandidateTracks,
+          batch.map((_, index) => nextTexts[batchStartIndex + index] ?? failurePlaceholder),
+        );
+
+        consolidated.forEach((decision, index) => {
+          const absoluteIndex = batchStartIndex + index;
+          nextDecisions[absoluteIndex] = decision;
+          nextSelectedTracks[absoluteIndex] = decision.winner;
+          nextTexts[absoluteIndex] = getCandidateText(
+            candidateTracks,
+            decision.winner,
+            absoluteIndex,
+            nextTexts[absoluteIndex] ?? failurePlaceholder,
+          );
+        });
+
+        options.onProgress?.(nextTexts.slice());
+        completedBatches += 1;
+        const snapshot = buildSnapshot(
+          stageIndex,
+          0,
+          batchIdx + 1,
+          completedBatches,
+          'user',
+          nextTexts,
+          candidateTracks,
+          nextDecisions,
+          nextSelectedTracks,
+          nodeRuntime,
+        );
+        if (options.shouldPause?.(snapshot)) {
+          throw new WorkflowPausedError(snapshot);
+        }
+        if (batchIdx < batches.length - 1) {
+          await maybeDelay(options.delayMs);
+        }
+        const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+        options.onLog(`  ✓ 对抗评审批次 ${batchIdx + 1} 完成 (${batchDuration}s)`);
+      }
+
+      currentTexts = nextTexts;
+      judgeDecisions = nextDecisions;
+      selectedTrackByEntry = nextSelectedTracks;
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      options.onLog(`✅ 对抗评审完成, 耗时 ${duration}s`);
+      continue;
+    }
+
+    if (stage.type === 'judge' && stage.strategy === 'tiebreak') {
+      const node = nodes[0];
+      const disputedIndices = judgeDecisions.flatMap((decision, index) => (decision?.isDisputed ? [index] : []));
+      if (disputedIndices.length === 0) {
+        options.onLog('✅ 无争议条目，跳过仲裁阶段');
+        continue;
+      }
+
+      options.onLog(`⚖️ 开始争议仲裁: 节点 [${node.label}]，共 ${disputedIndices.length} 条`);
+      const startTime = Date.now();
+      const nextTexts = currentTexts.slice();
+      const nextDecisions = judgeDecisions.map(cloneJudgeDecision);
+      const nextSelectedTracks = selectedTrackByEntry.slice();
+      const batches = chunkArray(disputedIndices, options.batchSize);
+      const startBatchIndex =
+        stageIndex === (initialSnapshot?.stageIndex ?? -1) ? initialSnapshot?.batchIndex ?? 0 : 0;
+
+      for (let batchIdx = startBatchIndex; batchIdx < batches.length; batchIdx++) {
+        ensureNotAborted(options.signal);
+        const batchIndices = batches[batchIdx];
+        const batchEntries = batchIndices.map((index) => entries[index]);
+        const batchStartTime = Date.now();
+        options.onLog(`  ⏳ 仲裁批次 ${batchIdx + 1}/${batches.length}: 条目 ${batchIndices.map((index) => index + 1).join(', ')}`);
+
+        try {
+          const response = await options.executeNode({
+            operation: 'judge',
+            node,
+            texts: batchEntries.map((entry) => entry.text),
+            contextTexts: [],
+            batch: {
+              kind: 'translate',
+              sequence: batchIdx + 1,
+              startIndex: batchIndices[0] ?? 0,
+              endIndex: batchIndices[batchIndices.length - 1] ?? 0,
+              totalEntries: entries.length,
+            },
+            candidateSets: pickCandidateTracks(candidateTracks, batchIndices),
+          });
+          const decisions = parseJudgeDecisions(response.metadata);
+
+          batchIndices.forEach((entryIndex, offset) => {
+            const previous = nextDecisions[entryIndex] ?? {
+              winner: candidateTracks[0]?.key ?? '',
+              reason: '',
+              confidence: 0,
+            };
+            const currentDecision = decisions[offset];
+            if (!currentDecision?.winner) {
+              return;
+            }
+            const tiebreakScore: JudgeDimensionScore = {
+              nodeId: node.id,
+              dimension: node.judgeDimension ?? node.label,
+              winner: currentDecision.winner,
+              score: normalizeJudgeScore(currentDecision.dimensionScores?.[0]?.score, currentDecision.scores, currentDecision.winner),
+              reason: currentDecision.reason,
+            };
+            nextDecisions[entryIndex] = {
+              ...previous,
+              winner: currentDecision.winner,
+              reason: previous.reason,
+              confidence: previous.confidence,
+              dimensionScores: [...(previous.dimensionScores ?? []), tiebreakScore],
+              isDisputed: true,
+              debateReason: currentDecision.reason || currentDecision.debateReason || previous.debateReason,
+            };
+            nextSelectedTracks[entryIndex] = currentDecision.winner;
+            nextTexts[entryIndex] = getCandidateText(
+              candidateTracks,
+              currentDecision.winner,
+              entryIndex,
+              nextTexts[entryIndex] ?? failurePlaceholder,
+            );
+          });
+        } catch (batchError) {
+          const errorMsg = batchError instanceof Error ? batchError.message : '未知错误';
+          options.onLog(`  ❌ 仲裁批次 ${batchIdx + 1} 失败: ${errorMsg}`);
+        }
+
+        options.onProgress?.(nextTexts.slice());
+        completedBatches += 1;
+        const snapshot = buildSnapshot(
+          stageIndex,
+          0,
+          batchIdx + 1,
+          completedBatches,
+          'user',
+          nextTexts,
+          candidateTracks,
+          nextDecisions,
+          nextSelectedTracks,
+          nodeRuntime,
+        );
+        if (options.shouldPause?.(snapshot)) {
+          throw new WorkflowPausedError(snapshot);
+        }
+        if (batchIdx < batches.length - 1) {
+          await maybeDelay(options.delayMs);
+        }
+        const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+        options.onLog(`  ✓ 仲裁批次 ${batchIdx + 1} 完成 (${batchDuration}s)`);
+      }
+
+      currentTexts = nextTexts;
+      judgeDecisions = nextDecisions;
+      selectedTrackByEntry = nextSelectedTracks;
+      const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+      options.onLog(`✅ 仲裁阶段完成, 耗时 ${duration}s`);
+      continue;
+    }
+
+    if (stage.type === 'judge') {
+      const node = nodes[0];
+      options.onLog(`⚖️ 开始评估阶段: 节点 [${node.label}]`);
+      const startTime = Date.now();
+      const batches = chunkArray(entries, options.batchSize);
+      const nextTexts = currentTexts.slice();
+      const nextDecisions =
+        judgeDecisions.length === entries.length
+          ? judgeDecisions.map(cloneJudgeDecision)
+          : Array.from({ length: entries.length }, () => ({ winner: '', reason: '', confidence: 0 }));
+      const nextSelectedTracks =
+        selectedTrackByEntry.length === entries.length ? selectedTrackByEntry.slice() : entries.map(() => candidateTracks[0]?.key ?? '');
+      const startBatchIndex =
+        stageIndex === (initialSnapshot?.stageIndex ?? -1) ? initialSnapshot?.batchIndex ?? 0 : 0;
+      let judgeSuccess = true;
+
+      for (let batchIdx = startBatchIndex; batchIdx < batches.length; batchIdx++) {
+        ensureNotAborted(options.signal);
+        const batch = batches[batchIdx];
+        const batchStartTime = Date.now();
+        const startEntry = batchIdx * options.batchSize + 1;
+        const endEntry = batchIdx * options.batchSize + batch.length;
+        const batchStartIndex = batchIdx * options.batchSize;
         options.onLog(`  ⏳ [${node.label}] 批次 ${batchIdx + 1}/${batches.length}: 条目 ${startEntry}–${endEntry}`);
 
         try {
@@ -587,16 +971,25 @@ export async function executeWorkflowTemplate(
             batch: {
               kind: 'translate',
               sequence: batchIdx + 1,
-              startIndex: batchIdx * options.batchSize,
-              endIndex: batchIdx * options.batchSize + batch.length - 1,
+              startIndex: batchStartIndex,
+              endIndex: batchStartIndex + batch.length - 1,
               totalEntries: entries.length,
             },
-            candidateSets: candidateTracks,
+            candidateSets: sliceCandidateTracks(candidateTracks, batchStartIndex, batch.length),
           });
-          
+
           const decisions = parseJudgeDecisions(response.metadata);
-          allDecisions.push(...decisions);
-          allTranslations.push(...response.translations);
+          decisions.forEach((decision, offset) => {
+            const absoluteIndex = batchStartIndex + offset;
+            nextDecisions[absoluteIndex] = decision;
+            nextSelectedTracks[absoluteIndex] = decision.winner;
+            nextTexts[absoluteIndex] = getCandidateText(
+              candidateTracks,
+              decision.winner,
+              absoluteIndex,
+              nextTexts[absoluteIndex] ?? failurePlaceholder,
+            );
+          });
           const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
           options.onLog(`  ✓ [${node.label}] 批次 ${batchIdx + 1} 评估完成 (${batchDuration}s)`);
         } catch (batchError) {
@@ -604,30 +997,38 @@ export async function executeWorkflowTemplate(
           const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
           options.onLog(`  ❌ [${node.label}] 批次 ${batchIdx + 1} 评估失败 (${batchDuration}s): ${errorMsg}`);
           judgeSuccess = false;
-          // Push placeholders to keep alignment; use first candidate as fallback
-          for (let i = 0; i < batch.length; i++) allTranslations.push(failurePlaceholder);
         }
-        options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
+
+        options.onProgress?.(nextTexts.slice());
+        completedBatches += 1;
+        const snapshot = buildSnapshot(
+          stageIndex,
+          0,
+          batchIdx + 1,
+          completedBatches,
+          'user',
+          nextTexts,
+          candidateTracks,
+          nextDecisions,
+          nextSelectedTracks,
+          nodeRuntime,
+        );
+        if (options.shouldPause?.(snapshot)) {
+          throw new WorkflowPausedError(snapshot);
+        }
         if (batchIdx < batches.length - 1) {
           await maybeDelay(options.delayMs);
         }
       }
-      
+
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
-      judgeDecisions = allDecisions;
-      // For failed judge batches, fall back to first candidate track
-      const fallbackTexts = candidateTracks[0]?.texts ?? currentTexts;
-      currentTexts = normalizeTranslations(
-        allTranslations.map((t, i) => (isFailed(t) ? (fallbackTexts[i] ?? failurePlaceholder) : t)),
-        entries.length,
-      );
-      selectedTrackByEntry = judgeDecisions.length > 0
-        ? judgeDecisions.map((decision) => decision.winner)
-        : entries.map(() => candidateTracks[0]?.key ?? '');
+      judgeDecisions = nextDecisions;
+      currentTexts = normalizeTranslations(nextTexts, entries.length);
+      selectedTrackByEntry = nextSelectedTracks;
       if (judgeSuccess) {
         options.onLog(`✅ 评估完成, 耗时 ${duration}s`);
       } else {
-        options.onLog(`⚠️ 评估阶段部分批次失败, 已用首选候选兜底, 耗时 ${duration}s`);
+        options.onLog(`⚠️ 评估阶段部分批次失败, 已保留现有候选结果, 耗时 ${duration}s`);
       }
       continue;
     }

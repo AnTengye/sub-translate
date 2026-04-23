@@ -50,6 +50,60 @@ func TestReadSeedsDefaultTemplatesWhenRepositoryIsEmpty(t *testing.T) {
 	}
 }
 
+func TestReadSeedsAdversarialCompareTemplate(t *testing.T) {
+	t.Parallel()
+
+	service := appworkflow.NewService(appworkflow.Dependencies{})
+
+	state, err := service.Read(context.Background())
+	if err != nil {
+		t.Fatalf("Read() error = %v", err)
+	}
+
+	var compare *domainworkflow.Template
+	for index := range state.Templates {
+		if state.Templates[index].ID == "compare-and-judge" {
+			compare = &state.Templates[index]
+			break
+		}
+	}
+	if compare == nil {
+		t.Fatal("expected compare-and-judge template to be seeded")
+	}
+
+	if len(compare.Stages) != 3 {
+		t.Fatalf("expected compare template to have 3 stages, got %d", len(compare.Stages))
+	}
+
+	judgeStage := compare.Stages[1]
+	if judgeStage.Strategy != "adversarial" {
+		t.Fatalf("expected judge strategy adversarial, got %q", judgeStage.Strategy)
+	}
+	if judgeStage.Execution != "parallel" {
+		t.Fatalf("expected judge stage execution parallel, got %q", judgeStage.Execution)
+	}
+	if len(judgeStage.Nodes) != 2 {
+		t.Fatalf("expected 2 judge nodes, got %d", len(judgeStage.Nodes))
+	}
+	if judgeStage.Nodes[0].JudgeDimension != "accuracy" {
+		t.Fatalf("expected first judge dimension accuracy, got %q", judgeStage.Nodes[0].JudgeDimension)
+	}
+	if judgeStage.Nodes[1].JudgeDimension != "fluency" {
+		t.Fatalf("expected second judge dimension fluency, got %q", judgeStage.Nodes[1].JudgeDimension)
+	}
+
+	debateStage := compare.Stages[2]
+	if debateStage.Strategy != "tiebreak" {
+		t.Fatalf("expected debate strategy tiebreak, got %q", debateStage.Strategy)
+	}
+	if len(debateStage.Nodes) != 1 {
+		t.Fatalf("expected 1 tiebreak node, got %d", len(debateStage.Nodes))
+	}
+	if debateStage.Nodes[0].JudgeDimension != "tiebreak" {
+		t.Fatalf("expected tiebreak judge dimension, got %q", debateStage.Nodes[0].JudgeDimension)
+	}
+}
+
 func TestSavePersistsProvidedWorkflowTemplates(t *testing.T) {
 	t.Parallel()
 

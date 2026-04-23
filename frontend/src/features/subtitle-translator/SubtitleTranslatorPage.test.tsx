@@ -270,7 +270,7 @@ const workflowTemplates = {
     {
       id: 'compare',
       name: '双路比对',
-      description: '并行候选 + judge',
+      description: '并行候选 + 对抗评审 + 仲裁',
       scenario: 'comparison',
       stages: [
         {
@@ -308,21 +308,57 @@ const workflowTemplates = {
         },
         {
           id: 'judge',
-          name: '评估推荐',
+          name: '对抗评审',
           type: 'judge',
-          execution: 'serial',
-          strategy: 'manual-review',
+          execution: 'parallel',
+          strategy: 'adversarial',
           nodes: [
             {
-              id: 'judge',
-              label: '评估',
+              id: 'judge-accuracy',
+              label: '准确性评审',
               type: 'judge',
               enabled: true,
               prompt: '',
+              judgeDimension: 'accuracy',
               target: {
                 family: 'openai-compatible',
                 profileId: 'openai-compatible-default',
                 modelId: 'gpt-4.1-mini',
+              },
+            },
+            {
+              id: 'judge-fluency',
+              label: '流畅性评审',
+              type: 'judge',
+              enabled: true,
+              prompt: '',
+              judgeDimension: 'fluency',
+              target: {
+                family: 'claude-compatible',
+                profileId: 'claude-compatible-default',
+                modelId: 'claude-sonnet',
+              },
+            },
+          ],
+        },
+        {
+          id: 'debate',
+          name: '争议仲裁',
+          type: 'judge',
+          execution: 'serial',
+          strategy: 'tiebreak',
+          nodes: [
+            {
+              id: 'judge-tiebreak',
+              label: '仲裁节点',
+              type: 'judge',
+              enabled: true,
+              prompt: '',
+              judgeDimension: 'tiebreak',
+              target: {
+                family: 'openai-compatible',
+                profileId: 'openai-compatible-default',
+                modelId: 'qwen-local',
               },
             },
           ],
@@ -375,13 +411,24 @@ function createFetchMock() {
       const body = JSON.parse(String(init?.body ?? '{}'));
 
       if (body.operation === 'judge') {
+        if (body.options.model === 'qwen-local') {
+          return new Response(
+            JSON.stringify({
+              translations: [],
+              metadata: {
+                decisions: [{ winner: 'candidate-b', reason: '仲裁认为口语语气更贴近场景' }],
+              },
+            }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } },
+          );
+        }
         return new Response(
           JSON.stringify({
-            translations: ['你好', '世间'],
+            translations: [],
             metadata: {
               decisions: [
-                { winner: 'candidate-a', reason: '更自然' },
-                { winner: 'candidate-b', reason: '更准确' },
+                { winner: 'candidate-a', score: 92, reason: '语义更准确', dimension: 'accuracy' },
+                { winner: 'candidate-a', score: 70, reason: '更接近原句攻击性', dimension: 'accuracy' },
               ],
             },
           }),
@@ -411,6 +458,20 @@ function createFetchMock() {
 
     if (url === '/api/translate/claude-compatible') {
       const body = JSON.parse(String(init?.body ?? '{}'));
+      if (body.operation === 'judge') {
+        return new Response(
+          JSON.stringify({
+            translations: [],
+            metadata: {
+              decisions: [
+                { winner: 'candidate-a', score: 80, reason: '字幕更简洁', dimension: 'fluency' },
+                { winner: 'candidate-b', score: 75, reason: '口语更自然', dimension: 'fluency' },
+              ],
+            },
+          }),
+          { status: 200, headers: { 'Content-Type': 'application/json' } },
+        );
+      }
       if (body.operation === 'translate' && Array.isArray(body.texts) && body.texts.length === 1) {
         return new Response(JSON.stringify({ translations: ['世界'] }), {
           status: 200,
@@ -698,8 +759,9 @@ describe('SubtitleTranslatorPage workflow mode', () => {
 
     fireEvent.change(selector, { target: { value: 'compare' } });
 
-    expect(screen.getByText(/候选翻译/i)).toBeInTheDocument();
-    expect(screen.getByText(/评估推荐/i)).toBeInTheDocument();
+    expect(screen.getByText(/候选翻译/i, { selector: '.workflow-stage-name' })).toBeInTheDocument();
+    expect(screen.getByText(/对抗评审/i, { selector: '.workflow-stage-name' })).toBeInTheDocument();
+    expect(screen.getByText(/争议仲裁/i, { selector: '.workflow-stage-name' })).toBeInTheDocument();
   });
 
   it('saves edited workflow template targets back to the backend', async () => {
@@ -731,8 +793,12 @@ describe('SubtitleTranslatorPage workflow mode', () => {
     fireEvent.click(screen.getByRole('button', { name: /开始工作流/i }));
 
     expect(await screen.findByText(/推荐结果/i)).toBeInTheDocument();
-    expect(screen.getByText(/更自然/i)).toBeInTheDocument();
-    expect(screen.getByText(/更准确/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/综合置信度/i).length).toBeGreaterThan(1);
+    expect(screen.getAllByText(/无争议/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/已进入仲裁/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/仲裁认为口语语气更贴近场景/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/准确性评审/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/流畅性评审/i).length).toBeGreaterThan(0);
 
     const secondSelector = screen.getByLabelText(/条目 2 候选选择/i);
     expect(secondSelector).toHaveValue('candidate-b');

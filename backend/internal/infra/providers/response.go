@@ -113,6 +113,12 @@ func ParseJudgeResponse(text string, candidates []JudgeCandidate) ([]string, map
 			"label":  candidate.Label,
 			"reason": reason,
 		}
+		if score, ok := item["score"].(float64); ok {
+			decision["score"] = score
+		}
+		if dimension, ok := item["dimension"].(string); ok && strings.TrimSpace(dimension) != "" {
+			decision["dimension"] = strings.TrimSpace(dimension)
+		}
 		if scores, ok := item["scores"].(map[string]any); ok {
 			decision["scores"] = scores
 		}

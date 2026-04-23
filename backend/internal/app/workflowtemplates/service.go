@@ -95,8 +95,8 @@ func defaultState() domainworkflow.State {
 			},
 			{
 				ID:          "compare-and-judge",
-				Name:        "双路比对",
-				Description: "两路候选并行生成，再由评估节点推荐。",
+				Name:        "双路对比（对抗式评审）",
+				Description: "两路候选并行生成，双维度独立评审，争议条目进入仲裁轮次。",
 				Scenario:    "comparison",
 				Stages: []domainworkflow.Stage{
 					{
@@ -112,12 +112,44 @@ func defaultState() domainworkflow.State {
 					},
 					{
 						ID:        "judge",
-						Name:      "评估推荐",
+						Name:      "对抗评审",
+						Type:      "judge",
+						Execution: "parallel",
+						Strategy:  "adversarial",
+						Nodes: []domainworkflow.Node{
+							{
+								ID:             "judge-accuracy",
+								Label:          "准确性评审",
+								Type:           "judge",
+								Enabled:        true,
+								JudgeDimension: "accuracy",
+								Prompt:         "你是字幕翻译质量评审专家。你的职责是评估语义准确性和完整性，比较候选 A 与候选 B，返回每条字幕的 winner、score、reason。",
+							},
+							{
+								ID:             "judge-fluency",
+								Label:          "流畅性评审",
+								Type:           "judge",
+								Enabled:        true,
+								JudgeDimension: "fluency",
+								Prompt:         "你是字幕翻译质量评审专家。你的职责是评估自然流畅性和风格适配，比较候选 A 与候选 B，返回每条字幕的 winner、score、reason。",
+							},
+						},
+					},
+					{
+						ID:        "debate",
+						Name:      "争议仲裁",
 						Type:      "judge",
 						Execution: "serial",
-						Strategy:  "manual-review",
+						Strategy:  "tiebreak",
 						Nodes: []domainworkflow.Node{
-							{ID: "judge", Label: "评估节点", Type: "judge", Enabled: true},
+							{
+								ID:             "judge-tiebreak",
+								Label:          "仲裁节点",
+								Type:           "judge",
+								Enabled:        true,
+								JudgeDimension: "tiebreak",
+								Prompt:         "你将收到争议字幕、候选 A/B 与各维度评审理由，请给出最终 winner 和综合 reason。",
+							},
 						},
 					},
 				},

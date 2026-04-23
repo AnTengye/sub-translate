@@ -9,6 +9,7 @@ export interface WorkflowTemplateNode {
   type: WorkflowStageType;
   enabled: boolean;
   prompt: string;
+  judgeDimension?: string;
   target: ProviderTarget | null;
 }
 
