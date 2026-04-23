@@ -110,14 +110,95 @@ func (l *TranslationRunLogger) FinalizeRun(_ context.Context, runID string, payl
 		return errors.New("翻译任务不存在")
 	}
 
+	// NEW: Generate summary even if not provided to ensure it's never null
+	summary := payload.Summary
+	if summary == nil {
+		summary = l.generateFailureSummary(session)
+	}
+
 	timestamp := l.now().UTC().Format(time.RFC3339)
 	session.Status = payload.Status
-	session.Summary = cloneMap(payload.Summary)
+	session.Summary = summary // Guaranteed non-null
 	session.Error = cloneMap(payload.Error)
 	session.UpdatedAt = timestamp
 	session.CompletedAt = &timestamp
 
 	return l.persist(session)
+}
+
+// generateFailureSummary creates a comprehensive summary from batch data when none is provided
+func (l *TranslationRunLogger) generateFailureSummary(session *runSession) map[string]any {
+	totalBatches := len(session.Batches)
+	totalEntries := 0
+	successfulEntries := 0
+	failedBatches := []int{}
+	silentFailBatches := []int{}
+
+	for i, batch := range session.Batches {
+		successCount := 0
+		totalCount := 0
+		hasError := false
+
+		if sc, ok := batch["successCount"].(float64); ok {
+			successCount = int(sc)
+		}
+		if tc, ok := batch["totalCount"].(float64); ok {
+			totalCount = int(tc)
+		}
+		if he, ok := batch["hasError"].(bool); ok {
+			hasError = he
+		}
+
+		totalEntries += totalCount
+		successfulEntries += successCount
+
+		// Detect silent failures (0 success but had entries)
+		if successCount == 0 && totalCount > 0 {
+			silentFailBatches = append(silentFailBatches, i)
+		}
+
+		// Track failed batches
+		if hasError {
+			failedBatches = append(failedBatches, i)
+		}
+	}
+
+	// Determine error category from error metadata
+	errorCategory := "unknown"
+	if session.Error != nil {
+		if cat, ok := session.Error["category"].(string); ok && cat != "" {
+			errorCategory = cat
+		}
+	}
+
+	failedEntries := totalEntries - successfulEntries
+	completionRate := 0.0
+	if totalEntries > 0 {
+		completionRate = float64(successfulEntries) / float64(totalEntries)
+	}
+
+	return map[string]any{
+		"totalEntries":      totalEntries,
+		"successfulEntries": successfulEntries,
+		"failedEntries":     failedEntries,
+		"totalBatches":      totalBatches,
+		"failedBatches":     failedBatches,
+		"silentFailBatches": silentFailBatches,
+		"completionRate":    completionRate,
+		"errorCategory":     errorCategory,
+		"failureReason":     getErrorValue(session.Error, "message"),
+	}
+}
+
+// getErrorValue safely extracts a value from error map
+func getErrorValue(errMap map[string]any, key string) string {
+	if errMap == nil {
+		return ""
+	}
+	if val, ok := errMap[key].(string); ok {
+		return val
+	}
+	return ""
 }
 
 func (l *TranslationRunLogger) buildFilePath(runID string, timestamp time.Time) string {

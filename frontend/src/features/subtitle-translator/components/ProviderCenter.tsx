@@ -396,189 +396,424 @@ export function ProviderCenter(props: ProviderCenterProps) {
                   </div>
                 </section>
 
+                {/* 区块一：核心连接 */}
                 <section className="provider-center-section">
                   <div className="provider-center-section-heading">
                     <div>
-                      <h4>全局限流</h4>
-                      <p className="provider-center-caption">留空或 0 表示默认不限，Profile 与模型可继续覆盖。</p>
+                      <h4>核心连接</h4>
                     </div>
                   </div>
-                  <div className="provider-center-grid">
-                    <label className="field">
-                      <span>默认 RPM</span>
-                      <input
-                        aria-label="全局 RPM 默认限制"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={draft.limits.globalRpmLimit || ''}
-                        onChange={(event) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  limits: {
-                                    ...current.limits,
-                                    globalRpmLimit: parseLimitInput(event.target.value),
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>默认 RPD</span>
-                      <input
-                        aria-label="全局 RPD 默认限制"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={draft.limits.globalRpdLimit || ''}
-                        onChange={(event) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  limits: {
-                                    ...current.limits,
-                                    globalRpdLimit: parseLimitInput(event.target.value),
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
-                    <label className="field">
-                      <span>中断阈值</span>
-                      <input
-                        aria-label="限流中断阈值"
-                        type="number"
-                        min="1"
-                        step="1"
-                        value={draft.limits.rateLimitInterruptThreshold || 3}
-                        onChange={(event) =>
-                          setDraft((current) =>
-                            current
-                              ? {
-                                  ...current,
-                                  limits: {
-                                    ...current.limits,
-                                    rateLimitInterruptThreshold: parseLimitInput(event.target.value, 1),
-                                  },
-                                }
-                              : current,
-                          )
-                        }
-                      />
-                    </label>
+                  
+                  <div className="field">
+                    <span>API 地址</span>
+                    <input
+                      aria-label="apiEndpoint"
+                      className="provider-center-input"
+                      type="text"
+                      value={activeProfile.connection.apiEndpoint ?? ''}
+                      onChange={(event) =>
+                        updateProfile((profile) => ({
+                          ...profile,
+                          connection: {
+                            ...profile.connection,
+                            apiEndpoint: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                    <p className="provider-center-field-note">{previewApiUrl(activeProfile)}</p>
                   </div>
+
+                  <div className="field">
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <span style={{ color: 'var(--text-1)' }}>API 密钥</span>
+                      <div className="provider-center-inline-actions">
+                        <button className="provider-inline-button" type="button" onClick={() => setShowApiKey((value) => !value)}>
+                          {showApiKey ? '隐藏' : '显示'}
+                        </button>
+                        <button
+                          className="provider-inline-button provider-inline-button-primary"
+                          type="button"
+                          disabled={checkAction.isPending}
+                          onClick={() => void handleCheck()}
+                        >
+                          {checkAction.isPending ? '检测中…' : '检测'}
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      aria-label="apiKey"
+                      className="provider-center-input"
+                      type={showApiKey ? 'text' : 'password'}
+                      value={activeProfile.connection.apiKey ?? ''}
+                      onChange={(event) =>
+                        updateProfile((profile) => ({
+                          ...profile,
+                          connection: {
+                            ...profile.connection,
+                            apiKey: event.target.value,
+                          },
+                        }))
+                      }
+                    />
+                    <p className="provider-center-field-note">多个密钥可使用逗号分隔。</p>
+                  </div>
+
+                  {isBaidu && (
+                    <div className="provider-center-grid" style={{ marginTop: '14px' }}>
+                      <label className="field">
+                        <span>App ID</span>
+                        <input
+                          aria-label="appId"
+                          type="text"
+                          value={activeProfile.connection.appId ?? ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              connection: {
+                                ...profile.connection,
+                                appId: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>Secret Key</span>
+                        <input
+                          aria-label="secretKey"
+                          type={showApiKey ? 'text' : 'password'}
+                          value={activeProfile.connection.secretKey ?? ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              connection: {
+                                ...profile.connection,
+                                secretKey: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  )}
                 </section>
 
+                {/* 区块二：模型配置 */}
                 <section className="provider-center-section">
                   <div className="provider-center-section-heading">
                     <div>
-                      <h4>API 密钥</h4>
-                    </div>
-                    <div className="provider-center-inline-actions">
-                      <button className="provider-inline-button" type="button" onClick={() => setShowApiKey((value) => !value)}>
-                        {showApiKey ? '隐藏' : '显示'}
-                      </button>
-                      <button
-                        className="provider-inline-button provider-inline-button-primary"
-                        type="button"
-                        disabled={checkAction.isPending}
-                        onClick={() => void handleCheck()}
-                      >
-                        {checkAction.isPending ? '检测中…' : '检测'}
-                      </button>
+                      <h4>模型</h4>
+                      <p className="provider-center-caption">{selectedModels.length} 个已添加模型</p>
                     </div>
                   </div>
-                  <input
-                    aria-label="apiKey"
-                    className="provider-center-input"
-                    type={showApiKey ? 'text' : 'password'}
-                    value={activeProfile.connection.apiKey ?? ''}
-                    onChange={(event) =>
-                      updateProfile((profile) => ({
-                        ...profile,
-                        connection: {
-                          ...profile.connection,
-                          apiKey: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <p className="provider-center-field-note">多个密钥可使用逗号分隔。</p>
-                </section>
 
-                <section className="provider-center-section">
-                  <div className="provider-center-section-heading">
-                    <div>
-                      <h4>API 地址</h4>
-                    </div>
-                  </div>
-                  <input
-                    aria-label="apiEndpoint"
-                    className="provider-center-input"
-                    type="text"
-                    value={activeProfile.connection.apiEndpoint ?? ''}
-                    onChange={(event) =>
-                      updateProfile((profile) => ({
-                        ...profile,
-                        connection: {
-                          ...profile.connection,
-                          apiEndpoint: event.target.value,
-                        },
-                      }))
-                    }
-                  />
-                  <p className="provider-center-field-note">{previewApiUrl(activeProfile)}</p>
-                </section>
-
-                <section className="provider-center-section">
-                  <div className="provider-center-section-heading">
-                    <div>
-                      <h4>Profile 限流</h4>
-                      <p className="provider-center-caption">留空或 0 则继承全局默认限制。</p>
-                    </div>
-                  </div>
-                  <div className="provider-center-grid">
-                    <label className="field">
-                      <span>RPM</span>
+                  {(activeProfile.family === 'openai-compatible' || activeProfile.family === 'google') && (
+                    <label className="field field-checkbox provider-center-checkbox-row">
                       <input
-                        aria-label="Profile RPM 限制"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={activeProfile.rpmLimit || ''}
+                        aria-label="disableThinking"
+                        className="field-checkbox-input"
+                        type="checkbox"
+                        checked={activeProfile.settings.disableThinking === 'true'}
                         onChange={(event) =>
                           updateProfile((profile) => ({
                             ...profile,
-                            rpmLimit: parseLimitInput(event.target.value),
+                            settings: {
+                              ...profile.settings,
+                              disableThinking: event.target.checked ? 'true' : '',
+                            },
                           }))
                         }
                       />
+                      <div className="field-checkbox-copy">
+                        <span className="field-checkbox-title">disableThinking</span>
+                        <span className="provider-center-field-note">关闭模型思维链，优先返回直接结果。</span>
+                      </div>
                     </label>
-                    <label className="field">
-                      <span>RPD</span>
+                  )}
+
+                  <label className="field provider-center-model-field">
+                    <span>默认模型</span>
+                    <select
+                      aria-label="默认模型"
+                      value={defaultModelValue}
+                      onChange={(event) =>
+                        updateProfile((profile) => ({
+                          ...profile,
+                          settings: {
+                            ...profile.settings,
+                            [isBaidu ? 'modelType' : 'model']: event.target.value,
+                          },
+                        }))
+                      }
+                    >
+                      {!selectedModels.some((model) => model.id === defaultModelValue) && defaultModelValue ? (
+                        <option value={defaultModelValue}>{defaultModelValue}</option>
+                      ) : null}
+                      {selectedModels.length === 0 ? <option value="">请先在管理中添加模型</option> : null}
+                      {selectedModels.map((model) => (
+                        <option key={model.id} value={model.id}>
+                          {model.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="provider-center-model-board">
+                    {selectedModels.length === 0 ? (
+                      <span className="muted-text">暂无已添加模型。点击"管理"后从远端模型池中选择。</span>
+                    ) : (
+                      selectedModels.map((model) => (
+                        <div key={model.id} className="provider-center-model-row">
+                          <div className="provider-center-model-copy">
+                            <strong>{model.label}</strong>
+                            <span>{getModelSourceLabel(model.source)}</span>
+                          </div>
+                          <label className="provider-center-model-rpm">
+                            <span>RPM</span>
+                            <input
+                              aria-label={`${model.label} RPM 限制`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="0"
+                              value={model.rpmLimit || ''}
+                              onChange={(event) => {
+                                const value = parseLimitInput(event.target.value);
+                                updateProfile((profile) => ({
+                                  ...profile,
+                                  models: profile.models.map((m) => (m.id === model.id ? { ...m, rpmLimit: value } : m)),
+                                }));
+                              }}
+                            />
+                          </label>
+                          <label className="provider-center-model-rpm">
+                            <span>RPD</span>
+                            <input
+                              aria-label={`${model.label} RPD 限制`}
+                              type="number"
+                              min="0"
+                              step="1"
+                              placeholder="0"
+                              value={model.rpdLimit || ''}
+                              onChange={(event) => {
+                                const value = parseLimitInput(event.target.value);
+                                updateProfile((profile) => ({
+                                  ...profile,
+                                  models: profile.models.map((m) => (m.id === model.id ? { ...m, rpdLimit: value } : m)),
+                                }));
+                              }}
+                            />
+                          </label>
+                          <div className="provider-center-model-status">{model.enabled ? '可用' : '停用'}</div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="provider-center-model-footer">
+                    <button
+                      className="provider-inline-button provider-inline-button-primary"
+                      type="button"
+                      onClick={() => setModelManagerOpen(true)}
+                    >
+                      管理
+                    </button>
+                  </div>
+                </section>
+
+                {/* 区块三：限流与控制 */}
+                <section className="provider-center-section">
+                  <div className="provider-center-section-heading" style={{ marginBottom: '16px' }}>
+                    <div>
+                      <h4>限流与控制</h4>
+                      <p className="provider-center-caption">留空或 0 则不限制或继承默认限制。</p>
+                    </div>
+                  </div>
+                  
+                  <div style={{ marginBottom: '20px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '12px' }}>当前 Profile 限流</div>
+                    <div className="provider-center-grid">
+                      <label className="field" style={{ marginBottom: 0 }}>
+                        <span>RPM</span>
+                        <input
+                          aria-label="Profile RPM 限制"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="继承全局默认"
+                          value={activeProfile.rpmLimit || ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              rpmLimit: parseLimitInput(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="field" style={{ marginBottom: 0 }}>
+                        <span>RPD</span>
+                        <input
+                          aria-label="Profile RPD 限制"
+                          type="number"
+                          min="0"
+                          step="1"
+                          placeholder="继承全局默认"
+                          value={activeProfile.rpdLimit || ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              rpdLimit: parseLimitInput(event.target.value),
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  <div style={{ paddingTop: '16px', borderTop: '1px dashed var(--border)' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--text-1)', marginBottom: '12px' }}>全局默认限流</div>
+                    <div className="provider-center-grid-3">
+                      <label className="field" style={{ marginBottom: 0 }}>
+                        <span>默认 RPM</span>
+                        <input
+                          aria-label="全局 RPM 默认限制"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={draft.limits.globalRpmLimit || ''}
+                          onChange={(event) =>
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    limits: {
+                                      ...current.limits,
+                                      globalRpmLimit: parseLimitInput(event.target.value),
+                                    },
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="field" style={{ marginBottom: 0 }}>
+                        <span>默认 RPD</span>
+                        <input
+                          aria-label="全局 RPD 默认限制"
+                          type="number"
+                          min="0"
+                          step="1"
+                          value={draft.limits.globalRpdLimit || ''}
+                          onChange={(event) =>
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    limits: {
+                                      ...current.limits,
+                                      globalRpdLimit: parseLimitInput(event.target.value),
+                                    },
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </label>
+                      <label className="field" style={{ marginBottom: 0 }}>
+                        <span>中断阈值</span>
+                        <input
+                          aria-label="限流中断阈值"
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={draft.limits.rateLimitInterruptThreshold || 3}
+                          onChange={(event) =>
+                            setDraft((current) =>
+                              current
+                                ? {
+                                    ...current,
+                                    limits: {
+                                      ...current.limits,
+                                      rateLimitInterruptThreshold: parseLimitInput(event.target.value, 1),
+                                    },
+                                  }
+                                : current,
+                            )
+                          }
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </section>
+
+                {/* 区块四：特定提供商配置 */}
+                {isBaidu && (
+                  <section className="provider-center-section">
+                    <div className="provider-center-section-heading">
+                      <div>
+                        <h4>Baidu 专属配置</h4>
+                      </div>
+                    </div>
+                    <div className="provider-center-grid">
+                      <label className="field">
+                        <span>modelType</span>
+                        <input
+                          aria-label="modelType"
+                          type="text"
+                          value={activeProfile.settings.modelType ?? ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              settings: {
+                                ...profile.settings,
+                                modelType: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                      <label className="field">
+                        <span>reference</span>
+                        <input
+                          aria-label="reference"
+                          type="text"
+                          value={activeProfile.settings.reference ?? ''}
+                          onChange={(event) =>
+                            updateProfile((profile) => ({
+                              ...profile,
+                              settings: {
+                                ...profile.settings,
+                                reference: event.target.value,
+                              },
+                            }))
+                          }
+                        />
+                      </label>
+                    </div>
+
+                    <label className="field field-checkbox provider-center-checkbox-row" style={{ marginTop: '14px' }}>
                       <input
-                        aria-label="Profile RPD 限制"
-                        type="number"
-                        min="0"
-                        step="1"
-                        value={activeProfile.rpdLimit || ''}
+                        aria-label="punctuationPreprocessing"
+                        className="field-checkbox-input"
+                        type="checkbox"
+                        checked={activeProfile.settings.punctuationPreprocessing === 'true'}
                         onChange={(event) =>
                           updateProfile((profile) => ({
                             ...profile,
-                            rpdLimit: parseLimitInput(event.target.value),
+                            settings: {
+                              ...profile.settings,
+                              punctuationPreprocessing: event.target.checked ? 'true' : '',
+                            },
                           }))
                         }
                       />
+                      <div className="field-checkbox-copy">
+                        <span className="field-checkbox-title">punctuationPreprocessing</span>
+                      </div>
                     </label>
-                  </div>
-                </section>
+                  </section>
+                )}
               </>
             ) : (
               <section className="provider-center-section">
@@ -592,245 +827,6 @@ export function ProviderCenter(props: ProviderCenterProps) {
             )}
           </div>
         </div>
-
-        {activeProfile ? (
-          <>
-            {isBaidu ? (
-              <section className="provider-center-section">
-                <div className="provider-center-section-heading">
-                  <div>
-                    <h4>连接凭证</h4>
-                  </div>
-                </div>
-                <div className="provider-center-grid">
-                  <label className="field">
-                    <span>appId</span>
-                    <input
-                      aria-label="appId"
-                      type="text"
-                      value={activeProfile.connection.appId ?? ''}
-                      onChange={(event) =>
-                        updateProfile((profile) => ({
-                          ...profile,
-                          connection: {
-                            ...profile.connection,
-                            appId: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>secretKey</span>
-                    <input
-                      aria-label="secretKey"
-                      type="password"
-                      value={activeProfile.connection.secretKey ?? ''}
-                      onChange={(event) =>
-                        updateProfile((profile) => ({
-                          ...profile,
-                          connection: {
-                            ...profile.connection,
-                            secretKey: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-              </section>
-            ) : null}
-
-            <section className="provider-center-section">
-              <div className="provider-center-section-heading">
-                <div>
-                  <h4>模型</h4>
-                  <p className="provider-center-caption">{selectedModels.length} 个已添加模型</p>
-                </div>
-              </div>
-
-              {activeProfile.family === 'openai-compatible' || activeProfile.family === 'google' ? (
-                <label className="field field-checkbox provider-center-checkbox-row">
-                  <input
-                    aria-label="disableThinking"
-                    className="field-checkbox-input"
-                    type="checkbox"
-                    checked={activeProfile.settings.disableThinking === 'true'}
-                    onChange={(event) =>
-                      updateProfile((profile) => ({
-                        ...profile,
-                        settings: {
-                          ...profile.settings,
-                          disableThinking: event.target.checked ? 'true' : '',
-                        },
-                      }))
-                    }
-                  />
-                  <div className="field-checkbox-copy">
-                    <span className="field-checkbox-title">disableThinking</span>
-                    <span className="provider-center-field-note">关闭模型思维链，优先返回直接结果。</span>
-                  </div>
-                </label>
-              ) : null}
-
-              <label className="field provider-center-model-field">
-                <span>默认模型</span>
-                <select
-                  aria-label="默认模型"
-                  value={defaultModelValue}
-                  onChange={(event) =>
-                    updateProfile((profile) => ({
-                      ...profile,
-                      settings: {
-                        ...profile.settings,
-                        [isBaidu ? 'modelType' : 'model']: event.target.value,
-                      },
-                    }))
-                  }
-                >
-                  {!selectedModels.some((model) => model.id === defaultModelValue) && defaultModelValue ? (
-                    <option value={defaultModelValue}>{defaultModelValue}</option>
-                  ) : null}
-                  {selectedModels.length === 0 ? <option value="">请先在管理中添加模型</option> : null}
-                  {selectedModels.map((model) => (
-                    <option key={model.id} value={model.id}>
-                      {model.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <div className="provider-center-model-board">
-                {selectedModels.length === 0 ? (
-                  <span className="muted-text">暂无已添加模型。点击"管理"后从远端模型池中选择。</span>
-                ) : (
-                  selectedModels.map((model) => (
-                    <div key={model.id} className="provider-center-model-row">
-                      <div className="provider-center-model-copy">
-                        <strong>{model.label}</strong>
-                        <span>{getModelSourceLabel(model.source)}</span>
-                      </div>
-                      <label className="provider-center-model-rpm">
-                        <span>RPM</span>
-                        <input
-                          aria-label={`${model.label} RPM 限制`}
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="0"
-                          value={model.rpmLimit || ''}
-                          onChange={(event) => {
-                            const value = parseLimitInput(event.target.value);
-                            updateProfile((profile) => ({
-                              ...profile,
-                              models: profile.models.map((m) => (m.id === model.id ? { ...m, rpmLimit: value } : m)),
-                            }));
-                          }}
-                        />
-                      </label>
-                      <label className="provider-center-model-rpm">
-                        <span>RPD</span>
-                        <input
-                          aria-label={`${model.label} RPD 限制`}
-                          type="number"
-                          min="0"
-                          step="1"
-                          placeholder="0"
-                          value={model.rpdLimit || ''}
-                          onChange={(event) => {
-                            const value = parseLimitInput(event.target.value);
-                            updateProfile((profile) => ({
-                              ...profile,
-                              models: profile.models.map((m) => (m.id === model.id ? { ...m, rpdLimit: value } : m)),
-                            }));
-                          }}
-                        />
-                      </label>
-                      <div className="provider-center-model-status">{model.enabled ? '可用' : '停用'}</div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              <div className="provider-center-model-footer">
-                <button
-                  className="provider-inline-button provider-inline-button-primary"
-                  type="button"
-                  onClick={() => setModelManagerOpen(true)}
-                >
-                  管理
-                </button>
-              </div>
-            </section>
-
-            {isBaidu ? (
-              <section className="provider-center-section">
-                <div className="provider-center-section-heading">
-                  <div>
-                    <h4>Baidu 专属配置</h4>
-                  </div>
-                </div>
-                <div className="provider-center-grid">
-                  <label className="field">
-                    <span>modelType</span>
-                    <input
-                      aria-label="modelType"
-                      type="text"
-                      value={activeProfile.settings.modelType ?? ''}
-                      onChange={(event) =>
-                        updateProfile((profile) => ({
-                          ...profile,
-                          settings: {
-                            ...profile.settings,
-                            modelType: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field">
-                    <span>reference</span>
-                    <input
-                      aria-label="reference"
-                      type="text"
-                      value={activeProfile.settings.reference ?? ''}
-                      onChange={(event) =>
-                        updateProfile((profile) => ({
-                          ...profile,
-                          settings: {
-                            ...profile.settings,
-                            reference: event.target.value,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                </div>
-
-                <label className="field field-checkbox provider-center-checkbox-row">
-                  <input
-                    aria-label="punctuationPreprocessing"
-                    className="field-checkbox-input"
-                    type="checkbox"
-                    checked={activeProfile.settings.punctuationPreprocessing === 'true'}
-                    onChange={(event) =>
-                      updateProfile((profile) => ({
-                        ...profile,
-                        settings: {
-                          ...profile.settings,
-                          punctuationPreprocessing: event.target.checked ? 'true' : '',
-                        },
-                      }))
-                    }
-                  />
-                  <div className="field-checkbox-copy">
-                    <span className="field-checkbox-title">punctuationPreprocessing</span>
-                  </div>
-                </label>
-              </section>
-            ) : null}
-          </>
-        ) : null}
 
         <footer className="provider-center-footer">
           <button className="ghost-button" type="button" onClick={onClose}>

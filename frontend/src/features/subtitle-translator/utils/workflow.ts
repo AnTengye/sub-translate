@@ -11,11 +11,72 @@ import type { TranslationBatchMetadata } from '../../../lib/providers/types';
 
 const failurePlaceholder = '[翻译失败]';
 
+export type ErrorCategory = 
+  | 'auth'
+  | 'rate_limit'
+  | 'concurrency'
+  | 'invalid_format'
+  | 'server'
+  | 'network'
+  | 'invalid_result';
+
+export function classifyError(error: unknown): ErrorCategory {
+  const message = error instanceof Error ? error.message : String(error);
+  const lower = message.toLowerCase();
+  
+  // Auth errors (403/401) - should fail fast
+  if (lower.includes('403') || lower.includes('401') || lower.includes('forbidden') || lower.includes('not assigned')) {
+    return 'auth';
+  }
+  
+  // Rate limit errors (429) - should retry with backoff
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('cooling down') || lower.includes('限流')) {
+    return 'rate_limit';
+  }
+  
+  // Concurrency errors - should retry with delay
+  if (lower.includes('too many concurrent') || lower.includes('concurrent request')) {
+    return 'concurrency';
+  }
+  
+  // Invalid format errors - upstream returned unexpected format
+  if (lower.includes('invalid character') || lower.includes('unexpected token') || lower.includes('invalid result')) {
+    return 'invalid_format';
+  }
+  
+  // Server errors (5xx)
+  if (/\b5\d{2}\b/.test(message)) {
+    return 'server';
+  }
+  
+  return 'network';
+}
+
+export function isFatalError(error: unknown): boolean {
+  const category = classifyError(error);
+  return category === 'auth'; // Auth errors should fail fast, require manual intervention
+}
+
+export function shouldRetry(error: unknown): boolean {
+  const category = classifyError(error);
+  return category === 'rate_limit' || category === 'concurrency' || category === 'network' || category === 'server';
+}
+
 function maybeDelay(delayMs: number | undefined) {
   if (!delayMs || delayMs <= 0) {
     return Promise.resolve();
   }
   return new Promise<void>((resolve) => setTimeout(resolve, delayMs));
+}
+
+// NEW: Calculate adaptive delay based on recent failures
+function calculateAdaptiveDelay(
+  recentFailures: number,
+  baseDelay: number,
+): number {
+  if (recentFailures >= 3) return baseDelay * 3;
+  if (recentFailures >= 2) return baseDelay * 2;
+  return baseDelay;
 }
 
 interface WorkflowSourceEntry {
@@ -77,6 +138,48 @@ export class WorkflowPausedError extends Error {
 
 export function isWorkflowPausedError(error: unknown): error is WorkflowPausedError {
   return error instanceof WorkflowPausedError;
+}
+
+export class SilentFailureError extends Error {
+  batchIndex: number;
+  batchSize: number;
+  
+  constructor(message: string, batchIndex: number, batchSize: number) {
+    super(message);
+    this.name = 'SilentFailureError';
+    this.batchIndex = batchIndex;
+    this.batchSize = batchSize;
+  }
+}
+
+export function isSilentFailureError(error: unknown): error is SilentFailureError {
+  return error instanceof SilentFailureError;
+}
+
+export class StageGateError extends Error {
+  validation: StageValidationResult;
+  
+  constructor(message: string, validation: StageValidationResult) {
+    super(message);
+    this.name = 'StageGateError';
+    this.validation = validation;
+  }
+}
+
+export interface StageValidationResult {
+  canProceed: boolean;
+  successfulCount: number;
+  failedCount: number;
+  silentFailureCount: number;
+  failedIndices: number[];
+  blockers: string[];
+}
+
+export interface SilentFailureBatch {
+  batchIndex: number;
+  totalCount: number;
+  successCount: number;
+  errorCategory?: ErrorCategory;
 }
 
 interface ExecuteWorkflowTemplateOptions {
@@ -179,8 +282,8 @@ function buildSnapshot(
 }
 
 function isRateLimitError(error: unknown) {
-  const message = error instanceof Error ? error.message.toLowerCase() : String(error).toLowerCase();
-  return message.includes('rate limit') || message.includes('429') || message.includes('rpm') || message.includes('rpd') || message.includes('限流');
+  const category = classifyError(error);
+  return category === 'rate_limit' || category === 'concurrency';
 }
 
 export async function executeWorkflowTemplate(
@@ -198,6 +301,10 @@ export async function executeWorkflowTemplate(
     Object.entries(initialSnapshot?.nodeRuntime ?? {}).map(([key, value]) => [key, { ...value }]),
   ) as WorkflowExecutionSnapshot['nodeRuntime'];
   const interruptThreshold = options.rateLimitInterruptThreshold ?? 3;
+  
+  // NEW: Track batch results for adaptive behavior
+  const batchResults: Array<{successCount: number; totalCount: number; hasError: boolean; category?: ErrorCategory}> = [];
+  let recentFailureCount = 0;
 
   for (let stageIndex = initialSnapshot?.stageIndex ?? 0; stageIndex < template.stages.length; stageIndex++) {
     const stage = template.stages[stageIndex];
@@ -259,6 +366,22 @@ export async function executeWorkflowTemplate(
             });
 
             const translated = normalizeTranslations(response.translations, batchIndices.length);
+            
+            // NEW: Detect silent failure (HTTP 200 but 0 successful translations)
+            const successCount = translated.filter(t => !isFailed(t)).length;
+            if (successCount === 0 && translated.length > 0) {
+              const silentError = new SilentFailureError(
+                `批次 ${batchIdx + 1}: HTTP 200 但 0/${translated.length} 成功`,
+                batchIdx,
+                translated.length
+              );
+              options.onLog(`  ⚠️ 批次 ${batchIdx + 1} 静默失败: 0/${translated.length} 成功`);
+              hasFailure = true;
+              nodeRuntime[runtimeKey].lastError = silentError.message;
+              // Don't count as completed batch, treat as failure
+              continue;
+            }
+            
             translated.forEach((text, index) => {
               nextTexts[batchIndices[index]] = text;
             });
@@ -267,12 +390,25 @@ export async function executeWorkflowTemplate(
               lastError: null,
               status: 'idle',
             };
+            
+            // Track successful batch
+            batchResults.push({
+              successCount,
+              totalCount: batchIndices.length,
+              hasError: false,
+            });
+            recentFailureCount = Math.max(0, recentFailureCount - 1); // Decay failure count
           } catch (batchError) {
             hasFailure = true;
-            options.onLog(`  ❌ 批次 ${batchIdx + 1} 失败: ${batchError instanceof Error ? batchError.message : '未知错误'}`);
+            recentFailureCount++;
+            const errorMessage = batchError instanceof Error ? batchError.message : '未知错误';
+            const errorCategory = classifyError(batchError);
+            
+            options.onLog(`  ❌ 批次 ${batchIdx + 1} 失败 [${errorCategory}]: ${errorMessage}`);
+            
             if (isRateLimitError(batchError)) {
               nodeRuntime[runtimeKey].consecutiveRateLimitHits += 1;
-              nodeRuntime[runtimeKey].lastError = batchError instanceof Error ? batchError.message : 'rate limit';
+              nodeRuntime[runtimeKey].lastError = errorMessage;
               options.onLog(`  ⚠️ 限流命中 ${nodeRuntime[runtimeKey].consecutiveRateLimitHits}/${interruptThreshold}`);
               if (nodeRuntime[runtimeKey].consecutiveRateLimitHits >= interruptThreshold) {
                 nodeRuntime[runtimeKey].status = 'interrupted';
@@ -281,8 +417,16 @@ export async function executeWorkflowTemplate(
                 throw new WorkflowPausedError(snapshot);
               }
             } else {
-              nodeRuntime[runtimeKey].lastError = batchError instanceof Error ? batchError.message : '未知错误';
+              nodeRuntime[runtimeKey].lastError = errorMessage;
             }
+            
+            // Track batch result
+            batchResults.push({
+              successCount: 0,
+              totalCount: batchIndices.length,
+              hasError: true,
+              category: errorCategory,
+            });
           }
           
           pendingIndices = pendingIndices.filter((index) => isFailed(nextTexts[index]));
@@ -294,7 +438,9 @@ export async function executeWorkflowTemplate(
           }
           if (pendingIndices.length === 0) break;
           if (batchIdx < batches.length - 1) {
-            await maybeDelay(options.delayMs);
+            // NEW: Use adaptive delay based on recent failures
+            const adaptiveDelay = calculateAdaptiveDelay(recentFailureCount, options.delayMs ?? 0);
+            await maybeDelay(adaptiveDelay);
           }
         }
 
@@ -316,6 +462,30 @@ export async function executeWorkflowTemplate(
         },
       ];
       selectedTrackByEntry = entries.map(() => 'current');
+      
+      // NEW: Validate stage completion before proceeding to next stage
+      const successfulCount = currentTexts.filter(t => !isFailed(t)).length;
+      const failedCount = currentTexts.filter(t => isFailed(t)).length;
+      
+      if (failedCount > 0 && failedCount > entries.length / 2) {
+        options.onLog(`⚠️ 翻译阶段失败率过高: ${failedCount}/${entries.length} 失败`);
+        options.onLog(`🛑 停留在翻译阶段，不进入后续阶段`);
+        throw new StageGateError(
+          `翻译阶段未完成: ${successfulCount}/${entries.length} 成功`,
+          {
+            canProceed: false,
+            successfulCount,
+            failedCount,
+            silentFailureCount: 0,
+            failedIndices: currentTexts.reduce<number[]>((indices, text, idx) => {
+              if (isFailed(text)) indices.push(idx);
+              return indices;
+            }, []),
+            blockers: [`失败率过高: ${failedCount}/${entries.length}`],
+          }
+        );
+      }
+      
       continue;
     }
 
@@ -325,28 +495,42 @@ export async function executeWorkflowTemplate(
         nodes.map(async (node) => {
           const startTime = Date.now();
           const batches = chunkArray(entries, options.batchSize);
-          options.onLog(`📦 节点 [${node.label}] 并行翻译，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+          options.onLog(`📦 [${node.label}] 共 ${batches.length} 批 (每批最多 ${options.batchSize} 条)`);
           
           const allTranslations: string[] = [];
           for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
             ensureNotAborted(options.signal);
             const batch = batches[batchIdx];
-            options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+            const batchStartTime = Date.now();
+            const startEntry = batchIdx * options.batchSize + 1;
+            const endEntry = batchIdx * options.batchSize + batch.length;
+            options.onLog(`  ⏳ [${node.label}] 批次 ${batchIdx + 1}/${batches.length}: 条目 ${startEntry}–${endEntry}`);
              
-            const response = await options.executeNode({
-              operation: 'translate',
-              node,
-              texts: batch.map((entry) => entry.text),
-              contextTexts: getContextBefore(allTranslations, batchIdx * options.batchSize, options.contextLines),
-              batch: {
-                kind: 'translate',
-                sequence: batchIdx + 1,
-                startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
-                endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
-                totalEntries: entries.length,
-              },
-            });
-            allTranslations.push(...response.translations);
+            try {
+              const response = await options.executeNode({
+                operation: 'translate',
+                node,
+                texts: batch.map((entry) => entry.text),
+                contextTexts: getContextBefore(allTranslations, batchIdx * options.batchSize, options.contextLines),
+                batch: {
+                  kind: 'translate',
+                  sequence: batchIdx + 1,
+                  startIndex: batchIdx * options.batchSize,
+                  endIndex: batchIdx * options.batchSize + batch.length - 1,
+                  totalEntries: entries.length,
+                },
+              });
+              allTranslations.push(...response.translations);
+              const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+              const successCount = response.translations.filter(t => !isFailed(t)).length;
+              options.onLog(`  ✓ [${node.label}] 批次 ${batchIdx + 1} 完成: ${successCount}/${batch.length} 成功 (${batchDuration}s)`);
+            } catch (batchError) {
+              const errorMsg = batchError instanceof Error ? batchError.message : '未知错误';
+              const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+              options.onLog(`  ❌ [${node.label}] 批次 ${batchIdx + 1} 翻译失败 (${batchDuration}s): ${errorMsg}`);
+              // Push placeholders so indices stay aligned
+              for (let i = 0; i < batch.length; i++) allTranslations.push(failurePlaceholder);
+            }
             options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
             if (batchIdx < batches.length - 1) {
               await maybeDelay(options.delayMs);
@@ -356,7 +540,7 @@ export async function executeWorkflowTemplate(
           const duration = ((Date.now() - startTime) / 1000).toFixed(1);
           const translated = normalizeTranslations(allTranslations, entries.length);
           const successCount = translated.filter(t => !isFailed(t)).length;
-          options.onLog(`✅ 节点 [${node.label}] 并行翻译完成 (${successCount}/${entries.length} 成功, 耗时 ${duration}s)`);
+          options.onLog(`✅ [${node.label}] 翻译完成: ${successCount}/${entries.length} 成功, 耗时 ${duration}s`);
 
           return {
             key: node.id,
@@ -380,34 +564,49 @@ export async function executeWorkflowTemplate(
       const startTime = Date.now();
       
       const batches = chunkArray(entries, options.batchSize);
-      options.onLog(`📦 评估，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+      options.onLog(`📦 [${node.label}] 共 ${batches.length} 批 (每批最多 ${options.batchSize} 条)`);
       
       const allDecisions: WorkflowJudgeDecision[] = [];
       const allTranslations: string[] = [];
+      let judgeSuccess = true;
       
       for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
         ensureNotAborted(options.signal);
         const batch = batches[batchIdx];
-        options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
-        
-        const response = await options.executeNode({
-          operation: 'judge',
-          node,
-          texts: batch.map((entry) => entry.text),
-          contextTexts: [],
-          batch: {
-            kind: 'translate',
-            sequence: batchIdx + 1,
-            startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
-            endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
-            totalEntries: entries.length,
-          },
-          candidateSets: candidateTracks,
-        });
-        
-        const decisions = parseJudgeDecisions(response.metadata);
-        allDecisions.push(...decisions);
-        allTranslations.push(...response.translations);
+        const batchStartTime = Date.now();
+        const startEntry = batchIdx * options.batchSize + 1;
+        const endEntry = batchIdx * options.batchSize + batch.length;
+        options.onLog(`  ⏳ [${node.label}] 批次 ${batchIdx + 1}/${batches.length}: 条目 ${startEntry}–${endEntry}`);
+
+        try {
+          const response = await options.executeNode({
+            operation: 'judge',
+            node,
+            texts: batch.map((entry) => entry.text),
+            contextTexts: [],
+            batch: {
+              kind: 'translate',
+              sequence: batchIdx + 1,
+              startIndex: batchIdx * options.batchSize,
+              endIndex: batchIdx * options.batchSize + batch.length - 1,
+              totalEntries: entries.length,
+            },
+            candidateSets: candidateTracks,
+          });
+          
+          const decisions = parseJudgeDecisions(response.metadata);
+          allDecisions.push(...decisions);
+          allTranslations.push(...response.translations);
+          const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+          options.onLog(`  ✓ [${node.label}] 批次 ${batchIdx + 1} 评估完成 (${batchDuration}s)`);
+        } catch (batchError) {
+          const errorMsg = batchError instanceof Error ? batchError.message : '未知错误';
+          const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+          options.onLog(`  ❌ [${node.label}] 批次 ${batchIdx + 1} 评估失败 (${batchDuration}s): ${errorMsg}`);
+          judgeSuccess = false;
+          // Push placeholders to keep alignment; use first candidate as fallback
+          for (let i = 0; i < batch.length; i++) allTranslations.push(failurePlaceholder);
+        }
         options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
         if (batchIdx < batches.length - 1) {
           await maybeDelay(options.delayMs);
@@ -416,9 +615,20 @@ export async function executeWorkflowTemplate(
       
       const duration = ((Date.now() - startTime) / 1000).toFixed(1);
       judgeDecisions = allDecisions;
-      currentTexts = normalizeTranslations(allTranslations, entries.length);
-      selectedTrackByEntry = judgeDecisions.map((decision) => decision.winner);
-      options.onLog(`✅ 评估完成 (耗时 ${duration}s)`);
+      // For failed judge batches, fall back to first candidate track
+      const fallbackTexts = candidateTracks[0]?.texts ?? currentTexts;
+      currentTexts = normalizeTranslations(
+        allTranslations.map((t, i) => (isFailed(t) ? (fallbackTexts[i] ?? failurePlaceholder) : t)),
+        entries.length,
+      );
+      selectedTrackByEntry = judgeDecisions.length > 0
+        ? judgeDecisions.map((decision) => decision.winner)
+        : entries.map(() => candidateTracks[0]?.key ?? '');
+      if (judgeSuccess) {
+        options.onLog(`✅ 评估完成, 耗时 ${duration}s`);
+      } else {
+        options.onLog(`⚠️ 评估阶段部分批次失败, 已用首选候选兜底, 耗时 ${duration}s`);
+      }
       continue;
     }
 
@@ -428,33 +638,48 @@ export async function executeWorkflowTemplate(
         const startTime = Date.now();
         
         const batches = chunkArray(entries, options.batchSize);
-        options.onLog(`📦 审校，共 ${batches.length} 批 (每批 ${options.batchSize} 条)`);
+        options.onLog(`📦 [${node.label}] 共 ${batches.length} 批 (每批最多 ${options.batchSize} 条)`);
         
         const allTranslations: string[] = [];
         let processedCount = 0;
         for (let batchIdx = 0; batchIdx < batches.length; batchIdx++) {
           ensureNotAborted(options.signal);
           const batch = batches[batchIdx];
-          options.onLog(`  ⏳ 批次 ${batchIdx + 1}/${batches.length}: 条目 ${batch[0].idx + 1}–${batch[batch.length - 1].idx + 1}`);
+          const batchStartTime = Date.now();
+          const startEntry = batchIdx * options.batchSize + 1;
+          const endEntry = batchIdx * options.batchSize + batch.length;
+          options.onLog(`  ⏳ [${node.label}] 批次 ${batchIdx + 1}/${batches.length}: 条目 ${startEntry}–${endEntry}`);
           
           const batchDrafts = batch.map((_, index) => {
             return currentTexts[processedCount + index] ?? '[翻译失败]';
           });
-          const response = await options.executeNode({
-            operation: 'review',
-            node,
-            texts: batch.map((entry) => entry.text),
-            contextTexts: [],
-            batch: {
-              kind: 'translate',
-              sequence: batchIdx + 1,
-              startIndex: batch[0]?.idx ? batch[0].idx - 1 : batchIdx * options.batchSize,
-              endIndex: batch[batch.length - 1]?.idx ? batch[batch.length - 1].idx - 1 : batchIdx * options.batchSize,
-              totalEntries: entries.length,
-            },
-            draftTexts: batchDrafts,
-          });
-          allTranslations.push(...response.translations);
+
+          try {
+            const response = await options.executeNode({
+              operation: 'review',
+              node,
+              texts: batch.map((entry) => entry.text),
+              contextTexts: [],
+              batch: {
+                kind: 'translate',
+                sequence: batchIdx + 1,
+                startIndex: batchIdx * options.batchSize,
+                endIndex: batchIdx * options.batchSize + batch.length - 1,
+                totalEntries: entries.length,
+              },
+              draftTexts: batchDrafts,
+            });
+            allTranslations.push(...response.translations);
+            const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+            const successCount = response.translations.filter(t => !isFailed(t)).length;
+            options.onLog(`  ✓ [${node.label}] 批次 ${batchIdx + 1} 完成: ${successCount}/${batch.length} 成功 (${batchDuration}s)`);
+          } catch (batchError) {
+            const errorMsg = batchError instanceof Error ? batchError.message : '未知错误';
+            const batchDuration = ((Date.now() - batchStartTime) / 1000).toFixed(1);
+            options.onLog(`  ❌ [${node.label}] 批次 ${batchIdx + 1} 审校失败 (${batchDuration}s): ${errorMsg}`);
+            // Fall back to draft texts on error
+            allTranslations.push(...batchDrafts);
+          }
           processedCount += batch.length;
           options.onProgress?.(normalizeTranslations(allTranslations, entries.length));
           if (batchIdx < batches.length - 1) {
@@ -464,7 +689,8 @@ export async function executeWorkflowTemplate(
         
         const duration = ((Date.now() - startTime) / 1000).toFixed(1);
         currentTexts = normalizeTranslations(allTranslations, entries.length);
-        options.onLog(`✅ 审校完成 (耗时 ${duration}s)`);
+        const successCount = currentTexts.filter(t => !isFailed(t)).length;
+        options.onLog(`✅ [${node.label}] 审校完成: ${successCount}/${entries.length} 成功, 耗时 ${duration}s`);
       }
 
       candidateTracks = [

@@ -79,7 +79,11 @@ func ParseJudgeResponse(text string, candidates []JudgeCandidate) ([]string, map
 		return nil, nil, err
 	}
 	if len(rawItems) < count {
-		return nil, nil, errors.New("judge response shorter than candidate count")
+		// AI may have omitted trailing entries; pad with first candidate's texts as fallback
+		fallbackKey := candidates[0].Key
+		for len(rawItems) < count {
+			rawItems = append(rawItems, map[string]any{"winner": fallbackKey, "reason": "fallback: judge response was incomplete"})
+		}
 	}
 
 	translations := make([]string, count)

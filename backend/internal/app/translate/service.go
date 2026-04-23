@@ -3,9 +3,23 @@ package translate
 import (
 	"context"
 	"errors"
+	"fmt"
 
 	domainprovider "srt-translate/internal/domain/providercenter"
 )
+
+// InvalidResultError represents a case where HTTP 200 was returned but no valid translations were produced
+type InvalidResultError struct {
+	StatusCode int
+	RawBody    string
+	Message    string
+}
+
+func (e *InvalidResultError) Error() string {
+	return fmt.Sprintf("invalid result (HTTP %d): %s", e.StatusCode, e.Message)
+}
+
+func (e *InvalidResultError) IsInvalidResult() bool { return true }
 
 type TranslateInput struct {
 	RunID            string
@@ -40,9 +54,11 @@ type Request struct {
 }
 
 type Result struct {
-	Translations []string
-	Debug        map[string]any
-	Metadata     map[string]any
+	Translations  []string
+	Debug         map[string]any
+	Metadata      map[string]any
+	ErrorCategory string `json:"errorCategory,omitempty"` // NEW: Classified error type
+	RawErrorBody  string `json:"rawErrorBody,omitempty"`  // NEW: Original error response body
 }
 
 type Translator interface {
@@ -344,4 +360,50 @@ func cloneCandidateSets(input []JudgeCandidate) []JudgeCandidate {
 		}
 	}
 	return cloned
+}
+
+// BatchResult tracks the outcome of a single batch execution
+type BatchResult struct {
+	SuccessCount int
+	FailureCount int
+	TotalCount   int
+	HasError     bool
+	ErrorType    string
+}
+
+// StageCompletionReport validates whether a stage can safely transition to the next
+type StageCompletionReport struct {
+	TotalEntries      int
+	SuccessfulEntries int
+	FailedEntries     int
+	SilentFailures    int
+	FailedBatches     []int
+	SilentFailBatches []int
+	IsComplete        bool
+	Blockers          []string
+}
+
+// ValidateStageCompletion checks if a stage has completed successfully enough to proceed
+func ValidateStageCompletion(results []BatchResult, totalEntries int) StageCompletionReport {
+	report := StageCompletionReport{
+		TotalEntries: totalEntries,
+	}
+
+	for i, batch := range results {
+		if batch.SuccessCount == 0 && batch.TotalCount > 0 {
+			report.SilentFailures += batch.TotalCount
+			report.SilentFailBatches = append(report.SilentFailBatches, i)
+			report.Blockers = append(report.Blockers,
+				fmt.Sprintf("batch %d: 0/%d silent failure", i, batch.TotalCount))
+		}
+		report.FailedEntries += batch.FailureCount
+		report.SuccessfulEntries += batch.SuccessCount
+		if batch.HasError || batch.FailureCount > 0 {
+			report.FailedBatches = append(report.FailedBatches, i)
+		}
+	}
+
+	// Allow transition if no silent failures and failure rate < 50%
+	report.IsComplete = report.SilentFailures == 0 && report.FailedEntries < totalEntries/2
+	return report
 }

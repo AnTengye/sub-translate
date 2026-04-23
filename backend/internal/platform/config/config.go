@@ -13,6 +13,8 @@ type Config struct {
 	WorkflowTemplatesPath   string
 	LogDir                  string
 	TranslateMaxConcurrency int
+	TranslateMinConcurrency int  // NEW: Minimum concurrency for adaptive mode
+	AdaptiveConcurrency     bool // NEW: Enable adaptive concurrency control
 	ProviderRequestTimeout  time.Duration
 	ReadTimeout             time.Duration
 	WriteTimeout            time.Duration
@@ -41,6 +43,8 @@ func LoadFromEnv() Config {
 		WorkflowTemplatesPath:   fallback(os.Getenv("WORKFLOW_TEMPLATES_PATH"), "data/workflow_templates.json"),
 		LogDir:                  fallback(os.Getenv("LOG_DIR"), "logs/translations"),
 		TranslateMaxConcurrency: parseInt(os.Getenv("TRANSLATE_MAX_CONCURRENCY"), 10),
+		TranslateMinConcurrency: parseInt(os.Getenv("TRANSLATE_MIN_CONCURRENCY"), 2),
+		AdaptiveConcurrency:     os.Getenv("TRANSLATE_ADAPTIVE_CONCURRENCY") == "true",
 		ProviderRequestTimeout:  parseDuration(os.Getenv("PROVIDER_REQUEST_TIMEOUT"), 90*time.Second),
 		ReadTimeout:             parseDuration(os.Getenv("HTTP_READ_TIMEOUT"), 15*time.Second),
 		WriteTimeout:            parseDuration(os.Getenv("HTTP_WRITE_TIMEOUT"), 120*time.Second),

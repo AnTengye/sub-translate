@@ -44,6 +44,55 @@ type BaiduTranslator struct {
 	Now              func() int64
 }
 
+// ErrorCategory classifies upstream API errors for appropriate handling
+type ErrorCategory string
+
+const (
+	ErrAuth          ErrorCategory = "auth"           // 403/401 - permission issues
+	ErrRateLimit     ErrorCategory = "rate_limit"     // 429, cooling down
+	ErrConcurrency   ErrorCategory = "concurrency"    // Too many concurrent requests
+	ErrInvalidFormat ErrorCategory = "invalid_format" // JSON parse errors, unexpected format
+	ErrServer        ErrorCategory = "server"         // 5xx errors
+	ErrNetwork       ErrorCategory = "network"        // Connection issues, timeouts
+	ErrInvalidResult ErrorCategory = "invalid_result" // HTTP 200 but 0 valid translations
+)
+
+// ClassifyError categorizes an error based on HTTP status code, response body, and error message
+func ClassifyError(statusCode int, body string, err error) ErrorCategory {
+	// Check status code first
+	if statusCode == 403 || statusCode == 401 {
+		return ErrAuth
+	}
+	if statusCode == 429 {
+		return ErrRateLimit
+	}
+	if statusCode >= 500 {
+		return ErrServer
+	}
+
+	// Check body content for specific error patterns
+	bodyLower := strings.ToLower(body)
+	if strings.Contains(bodyLower, "cooling down") {
+		return ErrRateLimit
+	}
+	if strings.Contains(bodyLower, "too many concurrent") {
+		return ErrConcurrency
+	}
+	if strings.Contains(bodyLower, "not assigned") || strings.Contains(bodyLower, "forbidden") {
+		return ErrAuth
+	}
+
+	// Check error message for parsing issues
+	if err != nil {
+		errStr := strings.ToLower(err.Error())
+		if strings.Contains(errStr, "invalid character") || strings.Contains(errStr, "unexpected token") {
+			return ErrInvalidFormat
+		}
+	}
+
+	return ErrNetwork
+}
+
 func (t OpenAICompatibleTranslator) Translate(ctx context.Context, request apptranslate.Request) (apptranslate.Result, error) {
 	endpoint := normalizeOpenAIEndpoint(stringValue(request.RuntimeOverrides["apiEndpoint"]), stringValue(request.RuntimeOverrides["providerLabel"]))
 	if endpoint == "" {
@@ -59,10 +108,14 @@ func (t OpenAICompatibleTranslator) Translate(ctx context.Context, request apptr
 		return apptranslate.Result{}, err
 	}
 	model := firstNonEmpty(stringValue(request.Options["model"]), "gpt-4o-mini")
+	defaultMaxTokens := 4096
+	if request.Operation == "judge" {
+		defaultMaxTokens = 8192
+	}
 	payload := map[string]any{
 		"model":       model,
 		"temperature": floatValue(request.Options["temperature"], 0.3),
-		"max_tokens":  intValue(request.Options["maxTokens"], 4096),
+		"max_tokens":  intValue(request.Options["maxTokens"], defaultMaxTokens),
 		"stop":        []string{"<|endoftext|>", "<|im_start|>"},
 		"messages": []map[string]string{
 			{"role": "system", "content": system},
@@ -446,7 +499,11 @@ func buildReviewMessages(texts []string, draftTexts []string, contextTexts []str
 }
 
 func buildJudgeMessages(texts []string, candidates []apptranslate.JudgeCandidate, prompt string) (string, string) {
-	system := "你是专业字幕评审。请在多个中文字幕候选中选出更适合作为最终字幕的版本。\n规则：只从给定候选中选择，不要自行改写；每条字幕返回一个对象数组；对象至少包含 winner 和 reason 字段；winner 必须是候选 key。"
+	count := len(texts)
+	system := "你是专业字幕评审。请在多个中文字幕候选中选出更适合作为最终字幕的版本。\n" +
+		"规则：只从给定候选中选择，不要自行改写；" +
+		"必须为每一条字幕都返回一个评审对象，输出数组长度必须严格等于输入条数（" + strconv.Itoa(count) + "条）；" +
+		"对象至少包含 winner 和 reason 字段；winner 必须是候选 key；不得跳过、合并或省略任何条目。"
 	if prompt != "" {
 		system += "\n补充要求：" + prompt
 	}
@@ -464,7 +521,9 @@ func buildJudgeMessages(texts []string, candidates []apptranslate.JudgeCandidate
 		lines = append(lines, strings.Join(builder, "\n"))
 	}
 
-	user := "【待评估字幕】\n" + strings.Join(lines, "\n") + "\n\n请返回 JSON 数组，例如：[{\"winner\":\"A\",\"reason\":\"更自然\",\"scores\":{\"A\":9.1,\"B\":8.4}}]"
+	user := "【待评估字幕（共" + strconv.Itoa(count) + "条，必须返回" + strconv.Itoa(count) + "个对象）】\n" +
+		strings.Join(lines, "\n") +
+		"\n\n请返回长度为" + strconv.Itoa(count) + "的 JSON 数组，例如：[{\"winner\":\"A\",\"reason\":\"更自然\",\"scores\":{\"A\":9.1,\"B\":8.4}}]"
 	return system, user
 }
 
@@ -563,7 +622,7 @@ func doJSONRequest(ctx context.Context, client *http.Client, method string, url 
 	var lastRawBody []byte
 	var lastErr error
 
-	const maxAttempts = 5
+	const maxAttempts = 3
 
 	for attempt := 0; attempt < maxAttempts; attempt++ {
 		req, err := http.NewRequestWithContext(ctx, method, url, bytes.NewReader(body))

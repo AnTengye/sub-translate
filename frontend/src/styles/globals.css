@@ -1541,6 +1541,12 @@ select:focus-visible {
   gap: 12px;
 }
 
+.provider-center-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+
 .field {
   display: flex;
   flex-direction: column;
@@ -1734,7 +1740,8 @@ select:focus-visible {
   }
 
   .sub-body,
-  .provider-center-grid {
+  .provider-center-grid,
+  .provider-center-grid-3 {
     grid-template-columns: 1fr;
   }
 

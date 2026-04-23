@@ -14,9 +14,11 @@ import (
 	domainprovider "srt-translate/internal/domain/providercenter"
 )
 
-type HealthChecker struct{}
+type HealthChecker struct {
+	Client *http.Client
+}
 
-func (HealthChecker) Check(_ context.Context, profile domainprovider.Profile) (appprovidercenter.HealthCheckResult, error) {
+func (h HealthChecker) Check(ctx context.Context, profile domainprovider.Profile) (appprovidercenter.HealthCheckResult, error) {
 	if profile.Family == "openai-compatible" || profile.Family == "claude-compatible" || profile.Family == "google" {
 		if profile.Connection["apiEndpoint"] == "" || profile.Connection["apiKey"] == "" {
 			return appprovidercenter.HealthCheckResult{
@@ -24,9 +26,20 @@ func (HealthChecker) Check(_ context.Context, profile domainprovider.Profile) (a
 				Summary: "缺少 endpoint 或 API Key",
 			}, nil
 		}
+
+		models, err := fetchDiscoveredModels(ctx, h.Client, profile)
+		if err != nil {
+			errText := err.Error()
+			return appprovidercenter.HealthCheckResult{
+				Status:  "failed",
+				Summary: "模型路由 /models 不可用",
+				Error:   &errText,
+			}, nil
+		}
+
 		return appprovidercenter.HealthCheckResult{
 			Status:  "success",
-			Summary: "连接配置有效，可继续进行模型检查或翻译",
+			Summary: "模型路由 /models 可用，发现 " + strconv.Itoa(len(models)) + " 个模型",
 		}, nil
 	}
 
@@ -76,46 +89,7 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 400")
 	}
 
-	endpoint := strings.TrimRight(strings.TrimSpace(profile.Connection["apiEndpoint"]), "/")
-	reqURL := endpoint + "/models"
-	if profile.Family == "openai-compatible" {
-		endpoint = normalizeOpenAIEndpoint(endpoint, profile.Settings["providerLabel"])
-		reqURL = endpoint + "/models"
-	}
-	if profile.Family == "google" {
-		if endpoint == "" {
-			endpoint = "https://generativelanguage.googleapis.com/v1beta"
-		}
-		reqURL = endpoint + "/models?key=" + profile.Connection["apiKey"]
-	}
-	if endpoint == "" {
-		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 400")
-	}
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
-	if err != nil {
-		return appprovidercenter.ModelDiscoveryResult{}, err
-	}
-	if profile.Family == "openai-compatible" {
-		req.Header.Set("Authorization", "Bearer "+profile.Connection["apiKey"])
-	}
-
-	client := d.Client
-	if client == nil {
-		client = &http.Client{Timeout: 30 * time.Second}
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return appprovidercenter.ModelDiscoveryResult{}, err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return appprovidercenter.ModelDiscoveryResult{}, errors.New("模型发现失败 " + strconv.Itoa(resp.StatusCode))
-	}
-
-	models, err := decodeDiscoveredModels(resp.Body, profile.Family)
+	models, err := fetchDiscoveredModels(ctx, d.Client, profile)
 	if err != nil {
 		return appprovidercenter.ModelDiscoveryResult{}, err
 	}
@@ -125,6 +99,74 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		Summary:                "发现 " + strconv.Itoa(len(models)) + " 个模型",
 		SupportsModelDiscovery: true,
 	}, nil
+}
+
+func fetchDiscoveredModels(ctx context.Context, client *http.Client, profile domainprovider.Profile) ([]domainprovider.Model, error) {
+	reqURL, headers, err := buildModelDiscoveryRequest(profile)
+	if err != nil {
+		return nil, errors.New("模型发现失败 400")
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range headers {
+		req.Header.Set(key, value)
+	}
+
+	httpClient := client
+	if httpClient == nil {
+		httpClient = &http.Client{Timeout: 30 * time.Second}
+	}
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, errors.New("模型发现失败 " + strconv.Itoa(resp.StatusCode))
+	}
+
+	models, err := decodeDiscoveredModels(resp.Body, profile.Family)
+	if err != nil {
+		return nil, err
+	}
+	return models, nil
+}
+
+func buildModelDiscoveryRequest(profile domainprovider.Profile) (string, map[string]string, error) {
+	endpoint := strings.TrimRight(strings.TrimSpace(profile.Connection["apiEndpoint"]), "/")
+	headers := map[string]string{}
+
+	switch profile.Family {
+	case "openai-compatible":
+		endpoint = normalizeOpenAIEndpoint(endpoint, profile.Settings["providerLabel"])
+		if endpoint == "" {
+			return "", nil, errors.New("missing endpoint")
+		}
+		headers["Authorization"] = "Bearer " + profile.Connection["apiKey"]
+		return endpoint + "/models", headers, nil
+	case "claude-compatible":
+		if endpoint == "" {
+			return "", nil, errors.New("missing endpoint")
+		}
+		headers["x-api-key"] = profile.Connection["apiKey"]
+		headers["anthropic-version"] = "2023-06-01"
+		return endpoint + "/models", headers, nil
+	case "google":
+		if endpoint == "" {
+			endpoint = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		return endpoint + "/models?key=" + profile.Connection["apiKey"], headers, nil
+	default:
+		if endpoint == "" {
+			return "", nil, errors.New("missing endpoint")
+		}
+		return endpoint + "/models", headers, nil
+	}
 }
 
 func decodeDiscoveredModels(body io.Reader, family string) ([]domainprovider.Model, error) {
