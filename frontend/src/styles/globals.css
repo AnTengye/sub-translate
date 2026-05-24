@@ -705,6 +705,50 @@ select:focus-visible {
   display: inline-flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workflow-node-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border: 1px solid transparent;
+}
+
+.workflow-node-badge-idle {
+  color: var(--text-2);
+  background: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.08);
+}
+
+.workflow-node-badge-checking {
+  color: #ffd36a;
+  background: rgba(255, 211, 106, 0.12);
+  border-color: rgba(255, 211, 106, 0.2);
+}
+
+.workflow-node-badge-available {
+  color: #6de7c6;
+  background: rgba(99, 210, 190, 0.14);
+  border-color: rgba(99, 210, 190, 0.26);
+}
+
+.workflow-node-badge-unavailable {
+  color: #ff8f8f;
+  background: rgba(255, 107, 107, 0.14);
+  border-color: rgba(255, 107, 107, 0.26);
+}
+
+.workflow-node-badge-error {
+  color: #ffb86b;
+  background: rgba(255, 184, 107, 0.14);
+  border-color: rgba(255, 184, 107, 0.26);
 }
 
 .workflow-content {

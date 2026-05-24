@@ -393,6 +393,34 @@ function createFetchMock() {
       });
     }
 
+    if (url === '/api/provider-center/models/check') {
+      const body = JSON.parse(String(init?.body ?? '{}'));
+      if (body.modelId === 'claude-sonnet') {
+        return new Response(
+          JSON.stringify({
+            status: 'unavailable',
+            summary: '模型 claude-sonnet 当前不可用',
+            error: 'model not assigned',
+          }),
+          {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          },
+        );
+      }
+      return new Response(
+        JSON.stringify({
+          status: 'available',
+          summary: `模型 ${body.modelId} 可用`,
+          error: null,
+        }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      );
+    }
+
     if (url === '/api/translation-runs') {
       return new Response(JSON.stringify({ runId: 'run-1' }), {
         status: 200,
@@ -783,6 +811,58 @@ describe('SubtitleTranslatorPage workflow mode', () => {
         }),
       ),
     );
+  });
+
+  it('checks configured workflow models once per unique target and shows node badges', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof createFetchMock>;
+    renderPage();
+    await importSubtitle();
+
+    fireEvent.click(screen.getByRole('button', { name: /检测已配置模型/i }));
+
+    expect(await screen.findAllByText('可用')).toHaveLength(2);
+    expect(await screen.findAllByText('不可用')).toHaveLength(1);
+
+    const checkCalls = fetchMock.mock.calls.filter(([url]) => url === '/api/provider-center/models/check');
+    expect(checkCalls).toHaveLength(2);
+    expect(checkCalls.map(([, init]) => JSON.parse(String(init?.body ?? '{}')).modelId).sort()).toEqual([
+      'claude-sonnet',
+      'gpt-4.1-mini',
+    ]);
+  });
+
+  it('blocks workflow start when a checked node model is unavailable', async () => {
+    const fetchMock = globalThis.fetch as ReturnType<typeof createFetchMock>;
+    renderPage();
+    await importSubtitle();
+
+    fireEvent.click(screen.getByRole('button', { name: /检测已配置模型/i }));
+    expect(await screen.findByText('不可用')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /开始工作流/i }));
+
+    expect(await screen.findByText('请先调整标记为不可用的工作流节点模型')).toBeInTheDocument();
+    expect(fetchMock).not.toHaveBeenCalledWith(
+      '/api/translation-runs',
+      expect.anything(),
+    );
+  });
+
+  it('clears a node badge when its configured model changes', async () => {
+    renderPage();
+    await importSubtitle();
+
+    fireEvent.click(screen.getByRole('button', { name: /检测已配置模型/i }));
+    expect(await screen.findByText('不可用')).toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText(/补偿翻译 模型/i), {
+      target: { value: 'openai-compatible::openai-compatible-default::qwen-local' },
+    });
+
+    await waitFor(() => {
+      const fallbackCard = screen.getByLabelText(/补偿翻译 模型/i).closest('.workflow-node-card');
+      expect(within(fallbackCard as HTMLElement).getByText('未检测')).toBeInTheDocument();
+    });
   });
 
   it('executes compare workflow and allows manual candidate override', async () => {

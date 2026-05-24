@@ -1,6 +1,6 @@
 import type { SubtitleEntry } from '../../lib/subtitle/types';
 import type { ProviderProfileStorageData } from './config-storage';
-import type { ProviderCenterStateData } from './provider-center-api';
+import type { ProviderCenterStateData, ProviderModelAvailabilityStatus } from './provider-center-api';
 import type { ProviderTarget } from './target-selection';
 import type { WorkflowTemplate, WorkflowTemplateStateData } from './workflow-types';
 import type { WorkflowExecutionSnapshot } from './utils/workflow';
@@ -21,6 +21,14 @@ export type SubtitleFilter = 'all' | 'error' | 'done';
 
 export type WorkflowStep = 'upload' | 'config' | 'translating' | 'done';
 export type WorkflowRunStatus = 'idle' | 'running' | 'paused' | 'paused-interrupted' | 'completed';
+
+export interface WorkflowNodeModelCheckState {
+  status: ProviderModelAvailabilityStatus | 'checking';
+  summary: string;
+  error: string | null;
+  checkedAt: string | null;
+  modelKey: string;
+}
 
 export interface SubtitleTranslatorState {
   step: WorkflowStep;

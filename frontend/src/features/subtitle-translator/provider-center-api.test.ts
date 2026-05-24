@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchProviderCenterState } from './provider-center-api';
+import { checkProviderProfileModelAvailability, fetchProviderCenterState } from './provider-center-api';
 
 describe('provider-center-api', () => {
   afterEach(() => {
@@ -285,5 +285,30 @@ describe('provider-center-api', () => {
     expect(state.families['openai-compatible'].profiles[0].rpdLimit).toBe(0);
     expect(state.families['openai-compatible'].profiles[0].models[0].rpmLimit).toBe(0);
     expect(state.families['openai-compatible'].profiles[0].models[0].rpdLimit).toBe(0);
+  });
+
+  it('parses model availability checks from the workflow probe endpoint', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: 'unavailable',
+          summary: '模型 gpt-4.1-mini 当前不可用',
+          error: 'model not assigned',
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    );
+
+    const result = await checkProviderProfileModelAvailability(
+      'openai-compatible',
+      'openai-compatible-default',
+      'gpt-4.1-mini',
+    );
+
+    expect(result).toEqual({
+      status: 'unavailable',
+      summary: '模型 gpt-4.1-mini 当前不可用',
+      error: 'model not assigned',
+    });
   });
 });

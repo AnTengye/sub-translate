@@ -1,5 +1,5 @@
 import type { ProviderTargetOption } from '../target-selection';
-import type { WorkflowRunStatus } from '../types';
+import type { WorkflowNodeModelCheckState, WorkflowRunStatus } from '../types';
 import type { WorkflowTemplate, WorkflowTemplateStateData } from '../workflow-types';
 import { WorkflowStageCard } from './WorkflowStageCard';
 
@@ -8,10 +8,12 @@ interface WorkflowTemplatePanelProps {
   activeTemplateId: string | null;
   workflowDraft: WorkflowTemplate | null;
   providerOptions: ProviderTargetOption[];
+  nodeCheckStates: Record<string, WorkflowNodeModelCheckState>;
   batchSize: number;
   contextLines: number;
   temperature: number;
   busy: boolean;
+  checkingModels: boolean;
   runStatus: WorkflowRunStatus;
   canResume: boolean;
   onTemplateChange: (templateId: string) => void;
@@ -19,6 +21,7 @@ interface WorkflowTemplatePanelProps {
   onContextLinesChange: (value: number) => void;
   onTemperatureChange: (value: number) => void;
   onNodeTargetChange: (stageId: string, nodeId: string, value: string) => void;
+  onCheckModels: () => void | Promise<void>;
   onSave: () => void | Promise<void>;
   onStart: () => void | Promise<void>;
   onPause: () => void;
@@ -32,10 +35,12 @@ export function WorkflowTemplatePanel({
   activeTemplateId,
   workflowDraft,
   providerOptions,
+  nodeCheckStates,
   batchSize,
   contextLines,
   temperature,
   busy,
+  checkingModels,
   runStatus,
   canResume,
   onTemplateChange,
@@ -43,6 +48,7 @@ export function WorkflowTemplatePanel({
   onContextLinesChange,
   onTemperatureChange,
   onNodeTargetChange,
+  onCheckModels,
   onSave,
   onStart,
   onPause,
@@ -122,10 +128,19 @@ export function WorkflowTemplatePanel({
           key={stage.id}
           stage={stage}
           providerOptions={providerOptions}
+          nodeCheckStates={nodeCheckStates}
           onNodeTargetChange={onNodeTargetChange}
         />
       ))}
 
+      <button
+        className="provider-btn workflow-save-btn"
+        type="button"
+        disabled={busy || checkingModels || !workflowDraft}
+        onClick={() => void onCheckModels()}
+      >
+        {checkingModels ? '检测模型中…' : '检测已配置模型'}
+      </button>
       <button className="provider-btn workflow-save-btn" type="button" disabled={busy} onClick={() => void onSave()}>
         保存工作流模板
       </button>

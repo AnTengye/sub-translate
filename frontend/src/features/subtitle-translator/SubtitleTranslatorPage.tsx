@@ -9,13 +9,17 @@ import { UploadScreen } from './components/UploadScreen';
 import { WorkflowTemplatePanel } from './components/WorkflowTemplatePanel';
 import { useFileImport } from './hooks/useFileImport';
 import {
+  checkProviderProfileModelAvailability,
   checkProviderProfile,
   fetchProviderCenterState,
   fetchProviderProfileModelCatalog,
   saveProviderCenterState,
+  type ProviderCenterStateData,
+  type ProviderCenterProfile,
 } from './provider-center-api';
 import { createInitialState, subtitleTranslatorReducer } from './state/reducer';
 import { buildProviderRequestConfig, buildProviderTargetOptions, type ProviderTarget } from './target-selection';
+import type { WorkflowNodeModelCheckState } from './types';
 import {
   executeWorkflowTemplate,
   type WorkflowCandidateTrack,
@@ -84,6 +88,48 @@ function isCancellationError(error: unknown) {
 
 function isSuccessfulWorkflowText(text: string | null | undefined) {
   return Boolean(text && text !== '[翻译失败]');
+}
+
+function buildWorkflowNodeKey(stageId: string, nodeId: string) {
+  return `${stageId}::${nodeId}`;
+}
+
+function buildWorkflowTargetKey(target: ProviderTarget) {
+  return `${target.family}::${target.profileId}::${target.modelId}`;
+}
+
+function collectConfiguredWorkflowNodes(template: WorkflowTemplate | null) {
+  if (!template) {
+    return [];
+  }
+
+  return template.stages.flatMap((stage) =>
+    stage.nodes
+      .filter((node) => node.enabled && node.target)
+      .map((node) => ({
+        stageId: stage.id,
+        nodeId: node.id,
+        target: node.target as ProviderTarget,
+      })),
+  );
+}
+
+function findProviderProfile(
+  providerCenter: ProviderCenterStateData | null,
+  target: ProviderTarget,
+): ProviderCenterProfile | null {
+  return (
+    providerCenter?.families[target.family]?.profiles.find((profile) => profile.id === target.profileId) ?? null
+  );
+}
+
+function hasUnavailableWorkflowModels(
+  template: WorkflowTemplate | null,
+  nodeCheckStates: Record<string, WorkflowNodeModelCheckState>,
+) {
+  return collectConfiguredWorkflowNodes(template).some(
+    ({ stageId, nodeId }) => nodeCheckStates[buildWorkflowNodeKey(stageId, nodeId)]?.status === 'unavailable',
+  );
 }
 
 function formatJudgeConfidence(value: number) {
@@ -160,10 +206,12 @@ async function readBrowserFile(file: File) {
 export default function SubtitleTranslatorPage() {
   const [state, dispatch] = useReducer(subtitleTranslatorReducer, undefined, createInitialState);
   const [busy, setBusy] = useState(false);
+  const [checkingModels, setCheckingModels] = useState(false);
   const [candidateTracks, setCandidateTracks] = useState<WorkflowCandidateTrack[]>([]);
   const [judgeDecisions, setJudgeDecisions] = useState<WorkflowJudgeDecision[]>([]);
   const [selectedTrackByEntry, setSelectedTrackByEntry] = useState<string[]>([]);
   const [fallbackTexts, setFallbackTexts] = useState<string[]>([]);
+  const [nodeCheckStates, setNodeCheckStates] = useState<Record<string, WorkflowNodeModelCheckState>>({});
   const [isProviderCenterOpen, setIsProviderCenterOpen] = useState(false);
   const workflowAbortRef = useRef<AbortController | null>(null);
   const pauseRequestedRef = useRef(false);
@@ -174,6 +222,10 @@ export default function SubtitleTranslatorPage() {
   useEffect(() => {
     displayRef.current = state.display;
   }, [state.display]);
+
+  useEffect(() => {
+    setNodeCheckStates({});
+  }, [state.activeTemplateId, state.providerCenter]);
 
   useEffect(() => {
     let active = true;
@@ -278,6 +330,112 @@ export default function SubtitleTranslatorPage() {
     toast.success('工作流模板已保存');
   }
 
+  async function handleCheckWorkflowModels() {
+    const configuredNodes = collectConfiguredWorkflowNodes(state.workflowDraft);
+    if (configuredNodes.length === 0) {
+      dispatch({ type: 'setError', error: '当前工作流没有可检测的节点模型' });
+      return;
+    }
+    if (!state.providerCenter) {
+      dispatch({ type: 'setError', error: 'Provider 配置尚未加载完成' });
+      return;
+    }
+
+    const dedupedTargets = new Map<
+      string,
+      {
+        target: ProviderTarget;
+        profile: ProviderCenterProfile | null;
+        nodeKeys: string[];
+      }
+    >();
+
+    const nextCheckingStates = { ...nodeCheckStates };
+    for (const node of configuredNodes) {
+      const nodeKey = buildWorkflowNodeKey(node.stageId, node.nodeId);
+      const targetKey = buildWorkflowTargetKey(node.target);
+      nextCheckingStates[nodeKey] = {
+        status: 'checking',
+        summary: `正在检测 ${node.target.modelId}`,
+        error: null,
+        checkedAt: null,
+        modelKey: targetKey,
+      };
+
+      const existing = dedupedTargets.get(targetKey);
+      if (existing) {
+        existing.nodeKeys.push(nodeKey);
+        continue;
+      }
+
+      dedupedTargets.set(targetKey, {
+        target: node.target,
+        profile: findProviderProfile(state.providerCenter, node.target),
+        nodeKeys: [nodeKey],
+      });
+    }
+
+    setCheckingModels(true);
+    setNodeCheckStates(nextCheckingStates);
+    dispatch({ type: 'setError', error: null });
+
+    try {
+      const checkedAt = new Date().toISOString();
+      const targetResults = await Promise.all(
+        Array.from(dedupedTargets.entries()).map(async ([targetKey, entry]) => {
+          if (!entry.profile) {
+            return {
+              targetKey,
+              nodeKeys: entry.nodeKeys,
+              status: 'error' as const,
+              summary: `未找到 ${entry.target.profileId} 的 Provider 配置`,
+              error: 'profile-not-found',
+            };
+          }
+          try {
+            const result = await checkProviderProfileModelAvailability(
+              entry.target.family,
+              entry.target.profileId,
+              entry.target.modelId,
+              entry.profile,
+            );
+            return {
+              targetKey,
+              nodeKeys: entry.nodeKeys,
+              ...result,
+            };
+          } catch (error) {
+            return {
+              targetKey,
+              nodeKeys: entry.nodeKeys,
+              status: 'error' as const,
+              summary: `检测 ${entry.target.modelId} 失败`,
+              error: error instanceof Error ? error.message : '模型探测失败',
+            };
+          }
+        }),
+      );
+
+      setNodeCheckStates((current) => {
+        const nextStates = { ...current };
+        for (const result of targetResults) {
+          for (const nodeKey of result.nodeKeys) {
+            nextStates[nodeKey] = {
+              status: result.status,
+              summary: result.summary,
+              error: result.error,
+              checkedAt,
+              modelKey: result.targetKey,
+            };
+          }
+        }
+        return nextStates;
+      });
+    } finally {
+      setCheckingModels(false);
+    }
+  }
+
   async function handleStartWorkflow() {
     if (!state.workflowDraft) {
       dispatch({ type: 'setError', error: '请先选择工作流模板' });
@@ -292,6 +450,10 @@ export default function SubtitleTranslatorPage() {
     );
     if (!primaryRequest) {
       dispatch({ type: 'setError', error: '请先为工作流节点配置可用模型' });
+      return;
+    }
+    if (hasUnavailableWorkflowModels(state.workflowDraft, nodeCheckStates)) {
+      dispatch({ type: 'setError', error: '请先调整标记为不可用的工作流节点模型' });
       return;
     }
 
@@ -559,6 +721,11 @@ export default function SubtitleTranslatorPage() {
             }
           : null,
     });
+    setNodeCheckStates((current) => {
+      const nextStates = { ...current };
+      delete nextStates[buildWorkflowNodeKey(stageId, nodeId)];
+      return nextStates;
+    });
   }
 
   function handleCandidateOverride(index: number, nextKey: string) {
@@ -622,10 +789,12 @@ export default function SubtitleTranslatorPage() {
           activeTemplateId={state.activeTemplateId}
           workflowDraft={state.workflowDraft}
           providerOptions={providerOptions}
+          nodeCheckStates={nodeCheckStates}
           batchSize={state.translationConfig.batchSize}
           contextLines={state.translationConfig.contextLines}
           temperature={state.translationConfig.temperature}
           busy={busy}
+          checkingModels={checkingModels}
           runStatus={state.runStatus}
           canResume={Boolean(state.pausedSnapshot)}
           onTemplateChange={(templateId) => dispatch({ type: 'selectWorkflowTemplate', templateId })}
@@ -639,6 +808,7 @@ export default function SubtitleTranslatorPage() {
             dispatch({ type: 'updateTranslationConfig', key: 'temperature', value })
           }
           onNodeTargetChange={handleNodeTargetChange}
+          onCheckModels={handleCheckWorkflowModels}
           onSave={handleSaveWorkflowTemplate}
           onStart={handleStartWorkflow}
           onPause={() => {

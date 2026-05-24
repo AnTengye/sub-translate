@@ -27,6 +27,12 @@ type ModelDiscoveryResult struct {
 	SupportsModelDiscovery bool           `json:"supportsModelDiscovery"`
 }
 
+type ModelCheckResult struct {
+	Status  string  `json:"status"`
+	Summary string  `json:"summary"`
+	Error   *string `json:"error"`
+}
+
 type HealthChecker interface {
 	Check(context.Context, domain.Profile) (HealthCheckResult, error)
 }
@@ -35,12 +41,17 @@ type ModelDiscoverer interface {
 	Discover(context.Context, domain.Profile) (ModelDiscoveryResult, error)
 }
 
+type ModelVerifier interface {
+	CheckModel(context.Context, domain.Profile, string) (ModelCheckResult, error)
+}
+
 type Dependencies struct {
 	DefaultProvider string
 	Env             map[string]string
 	Repository      Repository
 	HealthChecker   HealthChecker
 	ModelDiscoverer ModelDiscoverer
+	ModelVerifier   ModelVerifier
 }
 
 type Service struct {
@@ -49,6 +60,7 @@ type Service struct {
 	repository      Repository
 	healthChecker   HealthChecker
 	modelDiscoverer ModelDiscoverer
+	modelVerifier   ModelVerifier
 }
 
 func NewService(deps Dependencies) *Service {
@@ -63,6 +75,7 @@ func NewService(deps Dependencies) *Service {
 		repository:      deps.Repository,
 		healthChecker:   deps.HealthChecker,
 		modelDiscoverer: deps.ModelDiscoverer,
+		modelVerifier:   deps.ModelVerifier,
 	}
 }
 
@@ -169,6 +182,29 @@ func (s *Service) DiscoverModels(ctx context.Context, family string, profileID s
 	}
 
 	return *profile, result, nil
+}
+
+func (s *Service) VerifyModel(
+	ctx context.Context,
+	family string,
+	profileID string,
+	modelID string,
+	draft *domain.Profile,
+) (ModelCheckResult, error) {
+	_, profile, _, err := s.loadCheckProfile(ctx, family, profileID, draft)
+	if err != nil {
+		return ModelCheckResult{}, err
+	}
+	if modelID == "" {
+		return ModelCheckResult{}, errors.New("Provider Profile 标识格式无效")
+	}
+	if s.modelVerifier == nil {
+		return ModelCheckResult{
+			Status:  "error",
+			Summary: "当前 provider 未配置模型探测能力",
+		}, nil
+	}
+	return s.modelVerifier.CheckModel(ctx, *profile, modelID)
 }
 
 func (s *Service) loadCheckProfile(

@@ -100,6 +100,7 @@ func main() {
 		Repository:      repository,
 		HealthChecker:   providercenterinfra.HealthChecker{},
 		ModelDiscoverer: providercenterinfra.ModelDiscoverer{Client: httpClient},
+		ModelVerifier:   providercenterinfra.ModelVerifier{Client: httpClient},
 	})
 	workflowTemplateService := appworkflowtemplates.NewService(appworkflowtemplates.Dependencies{
 		Repository: workflowtemplatesinfra.NewFileRepository(cfg.WorkflowTemplatesPath),

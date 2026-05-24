@@ -43,6 +43,14 @@ export interface ProviderCenterProfile {
   availableModels?: ProviderCenterModel[];
 }
 
+export type ProviderModelAvailabilityStatus = 'available' | 'unavailable' | 'error';
+
+export interface ProviderModelAvailabilityResult {
+  status: ProviderModelAvailabilityStatus;
+  summary: string;
+  error: string | null;
+}
+
 export interface ProviderCenterFamily {
   id: ProviderId;
   label: string;
@@ -204,3 +212,27 @@ export async function fetchProviderProfileModelCatalog(
 }
 
 export const discoverProviderProfileModels = fetchProviderProfileModelCatalog;
+
+export async function checkProviderProfileModelAvailability(
+  family: ProviderId,
+  profileId: string,
+  modelId: string,
+  profile?: ProviderCenterProfile,
+): Promise<ProviderModelAvailabilityResult> {
+  const response = await fetch('/api/provider-center/models/check', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ family, profileId, modelId, profile }),
+  });
+  const data = await parseJsonResponse(response);
+  if (!response.ok) {
+    throw new Error(data.error || `模型探测失败 ${response.status}`);
+  }
+  return {
+    status: ((data as { status?: ProviderModelAvailabilityStatus }).status ?? 'error') as ProviderModelAvailabilityStatus,
+    summary: String((data as { summary?: string }).summary ?? ''),
+    error: (data as { error?: string | null }).error ?? null,
+  };
+}

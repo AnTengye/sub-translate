@@ -25,6 +25,7 @@ type ProviderCenterService interface {
 	Save(context.Context, domainprovider.State) (domainprovider.State, error)
 	Check(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.HealthCheckResult, error)
 	DiscoverModels(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error)
+	VerifyModel(context.Context, string, string, string, *domainprovider.Profile) (appprovidercenter.ModelCheckResult, error)
 }
 
 type WorkflowTemplateService interface {
@@ -87,6 +88,10 @@ func (defaultProviderCenterService) Check(context.Context, string, string, *doma
 
 func (defaultProviderCenterService) DiscoverModels(context.Context, string, string, *domainprovider.Profile) (domainprovider.Profile, appprovidercenter.ModelDiscoveryResult, error) {
 	return domainprovider.Profile{}, appprovidercenter.ModelDiscoveryResult{}, errors.New("Provider Profile 标识格式无效")
+}
+
+func (defaultProviderCenterService) VerifyModel(context.Context, string, string, string, *domainprovider.Profile) (appprovidercenter.ModelCheckResult, error) {
+	return appprovidercenter.ModelCheckResult{}, errors.New("Provider Profile 标识格式无效")
 }
 
 type defaultTranslateService struct{}
@@ -260,6 +265,26 @@ func NewServer(deps Dependencies) http.Handler {
 				"models":  result.Models,
 				"summary": result.Summary,
 			})
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/api/provider-center/models/check":
+			var payload struct {
+				Family    string                  `json:"family"`
+				ProfileID string                  `json:"profileId"`
+				ModelID   string                  `json:"modelId"`
+				Profile   *domainprovider.Profile `json:"profile"`
+			}
+			if err := decodeJSONBody(r, &payload); err != nil {
+				writeError(w, http.StatusBadRequest, errors.New("请求体必须是合法 JSON"))
+				return
+			}
+			result, err := providerCenterService.VerifyModel(r.Context(), payload.Family, payload.ProfileID, payload.ModelID, payload.Profile)
+			if err != nil {
+				log.Printf("[Provider] VerifyModel Error: %s %s %s - %v", payload.Family, payload.ProfileID, payload.ModelID, err)
+				writeError(w, resolveStatusCode(err), err)
+				return
+			}
+			log.Printf("[Provider] VerifyModel Success: %s %s %s => %s", payload.Family, payload.ProfileID, payload.ModelID, result.Status)
+			writeJSON(w, http.StatusOK, result)
 			return
 		case r.Method == http.MethodPost && r.URL.Path == "/api/translation-runs":
 			var payload CreateRunPayload

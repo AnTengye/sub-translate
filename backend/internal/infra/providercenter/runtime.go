@@ -1,11 +1,16 @@
 package providercenterinfra
 
 import (
+	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -68,6 +73,10 @@ type ModelDiscoverer struct {
 	Client *http.Client
 }
 
+type ModelVerifier struct {
+	Client *http.Client
+}
+
 func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Profile) (appprovidercenter.ModelDiscoveryResult, error) {
 	if !profile.Capabilities["supportsModelDiscovery"] {
 		return appprovidercenter.ModelDiscoveryResult{
@@ -98,6 +107,53 @@ func (d ModelDiscoverer) Discover(ctx context.Context, profile domainprovider.Pr
 		Models:                 models,
 		Summary:                "发现 " + strconv.Itoa(len(models)) + " 个模型",
 		SupportsModelDiscovery: true,
+	}, nil
+}
+
+func (v ModelVerifier) CheckModel(
+	ctx context.Context,
+	profile domainprovider.Profile,
+	modelID string,
+) (appprovidercenter.ModelCheckResult, error) {
+	request, err := buildModelCheckRequest(profile, modelID)
+	if err != nil {
+		errText := err.Error()
+		return appprovidercenter.ModelCheckResult{
+			Status:  "error",
+			Summary: "模型探测配置不完整",
+			Error:   &errText,
+		}, nil
+	}
+
+	httpClient := clientOrDefault(v.Client)
+	resp, body, err := doModelCheckRequest(ctx, httpClient, request)
+	if err != nil {
+		errText := err.Error()
+		return appprovidercenter.ModelCheckResult{
+			Status:  "error",
+			Summary: "模型探测请求失败",
+			Error:   &errText,
+		}, nil
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		errText := extractUpstreamError(body)
+		if errText == "" {
+			errText = strings.TrimSpace(string(body))
+		}
+		if errText == "" {
+			errText = resp.Status
+		}
+		return appprovidercenter.ModelCheckResult{
+			Status:  "unavailable",
+			Summary: fmt.Sprintf("模型 %s 当前不可用", modelID),
+			Error:   &errText,
+		}, nil
+	}
+
+	return appprovidercenter.ModelCheckResult{
+		Status:  "available",
+		Summary: fmt.Sprintf("模型 %s 可用", modelID),
 	}, nil
 }
 
@@ -135,6 +191,177 @@ func fetchDiscoveredModels(ctx context.Context, client *http.Client, profile dom
 		return nil, err
 	}
 	return models, nil
+}
+
+type modelCheckRequest struct {
+	Method  string
+	URL     string
+	Headers map[string]string
+	Body    any
+}
+
+func buildModelCheckRequest(profile domainprovider.Profile, modelID string) (modelCheckRequest, error) {
+	switch profile.Family {
+	case "openai-compatible":
+		endpoint := normalizeOpenAIEndpoint(strings.TrimSpace(profile.Connection["apiEndpoint"]), profile.Settings["providerLabel"])
+		apiKey := strings.TrimSpace(profile.Connection["apiKey"])
+		if endpoint == "" || apiKey == "" {
+			return modelCheckRequest{}, errors.New("missing endpoint or api key")
+		}
+		return modelCheckRequest{
+			Method: http.MethodPost,
+			URL:    strings.TrimRight(endpoint, "/") + "/chat/completions",
+			Headers: map[string]string{
+				"Content-Type":  "application/json",
+				"Authorization": "Bearer " + apiKey,
+			},
+			Body: map[string]any{
+				"model":       modelID,
+				"temperature": 0,
+				"max_tokens":  1,
+				"messages": []map[string]string{
+					{"role": "user", "content": "ping"},
+				},
+			},
+		}, nil
+	case "claude-compatible":
+		endpoint := strings.TrimRight(strings.TrimSpace(profile.Connection["apiEndpoint"]), "/")
+		apiKey := strings.TrimSpace(profile.Connection["apiKey"])
+		if endpoint == "" || apiKey == "" {
+			return modelCheckRequest{}, errors.New("missing endpoint or api key")
+		}
+		return modelCheckRequest{
+			Method: http.MethodPost,
+			URL:    endpoint + "/messages",
+			Headers: map[string]string{
+				"Content-Type":      "application/json",
+				"x-api-key":         apiKey,
+				"anthropic-version": "2023-06-01",
+			},
+			Body: map[string]any{
+				"model":      modelID,
+				"max_tokens": 1,
+				"messages": []map[string]string{
+					{"role": "user", "content": "ping"},
+				},
+			},
+		}, nil
+	case "google":
+		endpoint := strings.TrimRight(strings.TrimSpace(profile.Connection["apiEndpoint"]), "/")
+		if endpoint == "" {
+			endpoint = "https://generativelanguage.googleapis.com/v1beta"
+		}
+		apiKey := strings.TrimSpace(profile.Connection["apiKey"])
+		if apiKey == "" {
+			return modelCheckRequest{}, errors.New("missing api key")
+		}
+		return modelCheckRequest{
+			Method: http.MethodPost,
+			URL:    endpoint + "/" + strings.TrimPrefix(modelID, "/") + ":generateContent?key=" + url.QueryEscape(apiKey),
+			Headers: map[string]string{
+				"Content-Type": "application/json",
+			},
+			Body: map[string]any{
+				"contents": []map[string]any{
+					{
+						"role": "user",
+						"parts": []map[string]string{
+							{"text": "ping"},
+						},
+					},
+				},
+				"generationConfig": map[string]any{
+					"temperature":     0,
+					"maxOutputTokens": 1,
+				},
+			},
+		}, nil
+	case "baidu":
+		endpoint := strings.TrimSpace(profile.Connection["apiEndpoint"])
+		appID := strings.TrimSpace(profile.Connection["appId"])
+		apiKey := strings.TrimSpace(profile.Connection["apiKey"])
+		secretKey := strings.TrimSpace(profile.Connection["secretKey"])
+		if endpoint == "" || appID == "" || (apiKey == "" && secretKey == "") {
+			return modelCheckRequest{}, errors.New("missing baidu credentials")
+		}
+		payload := map[string]any{
+			"appid": appID,
+			"from":  "jp",
+			"to":    "zh",
+			"q":     "ping",
+		}
+		if modelID != "" {
+			payload["model_type"] = modelID
+		}
+		headers := map[string]string{"Content-Type": "application/json"}
+		if apiKey != "" {
+			headers["Authorization"] = "Bearer " + apiKey
+		} else {
+			salt := strconv.FormatInt(time.Now().UnixMilli(), 10)
+			payload["salt"] = salt
+			payload["sign"] = md5Hex(appID + "ping" + salt + secretKey)
+		}
+		return modelCheckRequest{
+			Method:  http.MethodPost,
+			URL:     endpoint,
+			Headers: headers,
+			Body:    payload,
+		}, nil
+	default:
+		return modelCheckRequest{}, errors.New("unsupported provider")
+	}
+}
+
+func doModelCheckRequest(ctx context.Context, client *http.Client, request modelCheckRequest) (*http.Response, []byte, error) {
+	var body io.Reader
+	if request.Body != nil {
+		raw, err := json.Marshal(request.Body)
+		if err != nil {
+			return nil, nil, err
+		}
+		body = bytes.NewReader(raw)
+	}
+	req, err := http.NewRequestWithContext(ctx, request.Method, request.URL, body)
+	if err != nil {
+		return nil, nil, err
+	}
+	for key, value := range request.Headers {
+		req.Header.Set(key, value)
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	rawBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	return resp, rawBody, nil
+}
+
+func clientOrDefault(client *http.Client) *http.Client {
+	if client != nil {
+		return client
+	}
+	return &http.Client{Timeout: 30 * time.Second}
+}
+
+func extractUpstreamError(body []byte) string {
+	var payload struct {
+		Error struct {
+			Message string `json:"message"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(body, &payload); err == nil && payload.Error.Message != "" {
+		return payload.Error.Message
+	}
+	return ""
+}
+
+func md5Hex(value string) string {
+	sum := md5.Sum([]byte(value))
+	return hex.EncodeToString(sum[:])
 }
 
 func buildModelDiscoveryRequest(profile domainprovider.Profile) (string, map[string]string, error) {

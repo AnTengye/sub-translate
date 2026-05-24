@@ -28,6 +28,7 @@ type fakeProviderCenterService struct {
 	checkedFamily  string
 	checkedID      string
 	checkedProfile *domainprovider.Profile
+	checkedModelID string
 }
 
 func (f fakeProviderCenterService) Read(_ context.Context) (domainprovider.State, error) {
@@ -80,6 +81,23 @@ func (f *fakeProviderCenterService) DiscoverModels(_ context.Context, family str
 		}
 	}
 	return domainprovider.Profile{}, appprovidercenter.ModelDiscoveryResult{}, nil
+}
+
+func (f *fakeProviderCenterService) VerifyModel(
+	_ context.Context,
+	family string,
+	profileID string,
+	modelID string,
+	profile *domainprovider.Profile,
+) (appprovidercenter.ModelCheckResult, error) {
+	f.checkedFamily = family
+	f.checkedID = profileID
+	f.checkedModelID = modelID
+	f.checkedProfile = profile
+	return appprovidercenter.ModelCheckResult{
+		Status:  "available",
+		Summary: modelID + " ok",
+	}, nil
 }
 
 type fakeTranslateService struct {
@@ -264,6 +282,49 @@ func TestProviderCenterCheckRouteUsesDraftProfileFromRequest(t *testing.T) {
 
 	if got := service.checkedProfile.Connection["apiKey"]; got != "draft-key" {
 		t.Fatalf("expected draft api key to be used, got %q", got)
+	}
+}
+
+func TestProviderCenterModelCheckRouteUsesDraftProfileAndModelFromRequest(t *testing.T) {
+	t.Parallel()
+
+	service := &fakeProviderCenterService{}
+	handler := httpserver.NewServer(httpserver.Dependencies{
+		StaticFileHandler:     http.NotFoundHandler(),
+		ProviderCenterService: service,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/provider-center/models/check", bytes.NewBufferString(`{
+		"family":"openai-compatible",
+		"profileId":"saved-profile",
+		"modelId":"gpt-4.1-mini",
+		"profile":{
+			"id":"saved-profile",
+			"family":"openai-compatible",
+			"name":"Draft",
+			"enabled":true,
+			"isDefault":true,
+			"connection":{"apiEndpoint":"https://draft.example.com/v1","apiKey":"draft-key"},
+			"settings":{"model":"gpt-4.1-mini"},
+			"capabilities":{"supportsConnectionCheck":true},
+			"models":[],
+			"modelDiscovery":{"sourceMode":"auto","supportsModelDiscovery":true,"lastCheckedAt":null,"lastStatus":"idle","lastError":null},
+			"health":{"status":"success","summary":"draft","lastCheckedAt":null,"error":null}
+		}
+	}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected status %d, got %d", http.StatusOK, rec.Code)
+	}
+	if service.checkedProfile == nil {
+		t.Fatalf("expected draft profile to be forwarded to the service")
+	}
+	if service.checkedModelID != "gpt-4.1-mini" {
+		t.Fatalf("expected model id gpt-4.1-mini, got %q", service.checkedModelID)
 	}
 }
 
